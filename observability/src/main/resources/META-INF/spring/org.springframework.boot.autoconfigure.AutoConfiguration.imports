@@ -1,0 +1,4 @@
+com.jorisjonkers.personalstack.common.observability.ActuatorObservationFilterAutoConfiguration
+com.jorisjonkers.personalstack.common.observability.ApplicationTracingAspectAutoConfiguration
+com.jorisjonkers.personalstack.common.observability.GcEventTracingAutoConfiguration
+com.jorisjonkers.personalstack.common.observability.OtelObservationToSpanHandlerAutoConfiguration

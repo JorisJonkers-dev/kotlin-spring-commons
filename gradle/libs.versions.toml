@@ -1,0 +1,44 @@
+[versions]
+aspectj = "1.9.25.1"
+assertj = "3.27.7"
+archunit = "1.4.2"
+crac = "1.5.0"
+jackson = "2.21.3"
+jooq = "3.21.4"
+junit-jupiter = "6.1.0"
+kotlin = "2.3.21"
+mockk = "1.14.9"
+opentelemetry = "1.62.0"
+spring-boot = "4.0.6"
+spring-framework = "7.0.7"
+spring-security = "7.0.5"
+spring-vault = "4.0.2"
+
+[libraries]
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+aspectjweaver = { module = "org.aspectj:aspectjweaver", version.ref = "aspectj" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+crac = { module = "org.crac:crac", version.ref = "crac" }
+jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
+jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+jooq = { module = "org.jooq:jooq", version.ref = "jooq" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry" }
+opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing", version.ref = "opentelemetry" }
+spring-aop = { module = "org.springframework:spring-aop", version.ref = "spring-framework" }
+spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-autoconfigure", version.ref = "spring-boot" }
+spring-boot-starter-mail = { module = "org.springframework.boot:spring-boot-starter-mail", version.ref = "spring-boot" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation", version.ref = "spring-boot" }
+spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
+spring-boot-test = { module = "org.springframework.boot:spring-boot-test", version.ref = "spring-boot" }
+spring-context = { module = "org.springframework:spring-context", version.ref = "spring-framework" }
+spring-security-oauth2-jose = { module = "org.springframework.security:spring-security-oauth2-jose", version.ref = "spring-security" }
+spring-test = { module = "org.springframework:spring-test", version.ref = "spring-framework" }
+spring-tx = { module = "org.springframework:spring-tx", version.ref = "spring-framework" }
+spring-vault-core = { module = "org.springframework.vault:spring-vault-core", version.ref = "spring-vault" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
