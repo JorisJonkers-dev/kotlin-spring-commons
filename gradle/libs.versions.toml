@@ -6,12 +6,14 @@ crac = "1.5.0"
 jackson = "2.21.3"
 jooq = "3.21.4"
 junit-jupiter = "6.1.0"
+jakarta-servlet = "6.1.0"
 kotlin = "2.3.21"
 mockk = "1.14.9"
 opentelemetry = "1.62.0"
 spring-boot = "4.0.6"
 spring-framework = "7.0.7"
 spring-security = "7.0.5"
+springdoc = "3.0.3"
 spring-vault = "4.0.2"
 
 [libraries]
@@ -24,6 +26,7 @@ jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-
 jooq = { module = "org.jooq:jooq", version.ref = "jooq" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+jakarta-servlet-api = { module = "jakarta.servlet:jakarta.servlet-api", version.ref = "jakarta-servlet" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing", version.ref = "opentelemetry" }
@@ -33,11 +36,14 @@ spring-boot-starter-mail = { module = "org.springframework.boot:spring-boot-star
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation", version.ref = "spring-boot" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
 spring-boot-test = { module = "org.springframework.boot:spring-boot-test", version.ref = "spring-boot" }
+spring-boot-test-autoconfigure = { module = "org.springframework.boot:spring-boot-test-autoconfigure", version.ref = "spring-boot" }
+spring-boot-webmvc-test = { module = "org.springframework.boot:spring-boot-webmvc-test", version.ref = "spring-boot" }
 spring-context = { module = "org.springframework:spring-context", version.ref = "spring-framework" }
 spring-security-oauth2-jose = { module = "org.springframework.security:spring-security-oauth2-jose", version.ref = "spring-security" }
 spring-test = { module = "org.springframework:spring-test", version.ref = "spring-framework" }
 spring-tx = { module = "org.springframework:spring-tx", version.ref = "spring-framework" }
 spring-vault-core = { module = "org.springframework.vault:spring-vault-core", version.ref = "spring-vault" }
+springdoc-openapi-starter-webmvc-api = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
