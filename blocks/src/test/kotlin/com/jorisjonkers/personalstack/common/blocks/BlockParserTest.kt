@@ -7,6 +7,11 @@ class BlockParserTest {
     private val parser = BlockParser()
 
     @Test
+    fun `empty text returns no blocks`() {
+        assertThat(parser.parse("")).isEmpty()
+    }
+
+    @Test
     fun `plain text becomes one Text block`() {
         val blocks = parser.parse("hello world")
         assertThat(blocks).hasSize(1)
@@ -60,5 +65,38 @@ class BlockParserTest {
         assertThat(blocks[0]).isInstanceOf(Block.Text::class.java)
         assertThat(blocks[1]).isInstanceOf(Block.Text::class.java)
         assertThat(blocks[2]).isInstanceOf(Block.Diff::class.java)
+    }
+
+    @Test
+    fun `form block parses with default submit label`() {
+        val raw = "```block\n{\"kind\":\"form\",\"schema\":{\"type\":\"object\"}}\n```"
+
+        val blocks = parser.parse(raw)
+
+        assertThat(blocks).containsExactly(
+            Block.Form(schema = mapOf("type" to "object")),
+        )
+    }
+
+    @Test
+    fun `tool call block parses nullable result`() {
+        val raw = "```block\n{\"kind\":\"tool-call\",\"name\":\"search\",\"args\":{\"query\":\"status\"}}\n```"
+
+        val blocks = parser.parse(raw)
+
+        assertThat(blocks).containsExactly(
+            Block.ToolCall(name = "search", args = mapOf("query" to "status")),
+        )
+    }
+
+    @Test
+    fun `approval block parses payload`() {
+        val raw = "```block\n{\"kind\":\"approval\",\"action\":\"push\",\"payload\":{\"branch\":\"main\"}}\n```"
+
+        val blocks = parser.parse(raw)
+
+        assertThat(blocks).containsExactly(
+            Block.Approval(action = "push", payload = mapOf("branch" to "main")),
+        )
     }
 }

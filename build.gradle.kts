@@ -3,6 +3,8 @@ import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -24,6 +26,8 @@ allprojects {
 
 subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
+        apply(plugin = "jacoco")
+
         extensions.configure<JavaPluginExtension> {
             toolchain {
                 languageVersion.set(JavaLanguageVersion.of(21))
@@ -40,6 +44,32 @@ subprojects {
 
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()
+            finalizedBy(tasks.named("jacocoTestReport"))
+        }
+
+        tasks.named<JacocoReport>("jacocoTestReport") {
+            dependsOn(tasks.named("test"))
+            reports {
+                xml.required.set(true)
+                html.required.set(true)
+            }
+        }
+
+        tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+            dependsOn(tasks.named("test"))
+            violationRules {
+                rule {
+                    limit {
+                        counter = "LINE"
+                        value = "COVEREDRATIO"
+                        minimum = "0.80".toBigDecimal()
+                    }
+                }
+            }
+        }
+
+        tasks.named("check") {
+            dependsOn(tasks.named("jacocoTestCoverageVerification"))
         }
     }
 

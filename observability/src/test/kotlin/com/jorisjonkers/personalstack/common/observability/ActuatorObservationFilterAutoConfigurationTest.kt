@@ -16,6 +16,13 @@ class ActuatorObservationFilterAutoConfigurationTest {
     }
 
     @Test
+    fun `auto configuration exposes the actuator predicate`() {
+        val configured = ActuatorObservationFilterAutoConfiguration().excludeActuatorTracingPredicate()
+
+        assertThat(configured).isSameAs(ActuatorObservationPredicate)
+    }
+
+    @Test
     fun `passes through requests without a server context`() {
         assertThat(predicate.test("http.server.requests", Observation.Context())).isTrue()
     }

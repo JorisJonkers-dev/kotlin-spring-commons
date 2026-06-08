@@ -29,6 +29,12 @@ class OtelObservationToSpanHandlerTest {
     }
 
     @Test
+    fun `auto configuration creates the observation span handler`() {
+        assertThat(OtelObservationToSpanHandlerAutoConfiguration().otelObservationToSpanHandler())
+            .isInstanceOf(OtelObservationToSpanHandler::class.java)
+    }
+
+    @Test
     fun `emits a span named after the observation`() {
         Observation
             .start("cache.gets", registry)

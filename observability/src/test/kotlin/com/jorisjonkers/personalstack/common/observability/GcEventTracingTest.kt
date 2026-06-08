@@ -1,13 +1,16 @@
 package com.jorisjonkers.personalstack.common.observability
 
+import com.sun.management.GarbageCollectionNotificationInfo
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.time.Instant
+import javax.management.Notification
 
 class GcEventTracingTest {
     private val spans = InMemorySpanExporter.create()
@@ -22,6 +25,15 @@ class GcEventTracingTest {
     @AfterEach
     fun cleanup() {
         provider.shutdown()
+    }
+
+    @Test
+    fun `auto configuration creates gc tracing beans`() {
+        val configuration = GcEventTracingAutoConfiguration()
+
+        assertThat(configuration.gcEventSpanEmitter()).isInstanceOf(GcEventSpanEmitter::class.java)
+        assertThat(configuration.gcEventNotificationListener(emitter))
+            .isInstanceOf(GcEventNotificationListener::class.java)
     }
 
     @Test
@@ -48,27 +60,34 @@ class GcEventTracingTest {
     }
 
     @Test
-    fun `listener skips events below the minimum duration threshold`() {
-        // We can't synthesise a real GarbageCollectionNotificationInfo
-        // CompositeData easily; instead exercise the duration filter
-        // via the emitter and a separate manual call counter wrapper.
-        val recorded = mutableListOf<Long>()
-        val countingEmitter =
-            object {
-                fun maybeEmit(durationMs: Long) {
-                    if (durationMs < MIN_DURATION_MS) return
-                    recorded += durationMs
-                }
+    fun `listener start and stop manage gc notification subscriptions`() {
+        val listener = GcEventNotificationListener(emitter)
+
+        assertThatCode {
+            listener.start()
+            listener.stop()
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `listener ignores unrelated and malformed notifications`() {
+        val listener = GcEventNotificationListener(emitter)
+        val malformedGcNotification =
+            Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
+                this,
+                2L,
+            ).apply {
+                userData = "not composite data"
             }
-        countingEmitter.maybeEmit(1)
-        countingEmitter.maybeEmit(4)
-        countingEmitter.maybeEmit(5)
-        countingEmitter.maybeEmit(120)
-        assertThat(recorded).containsExactly(5L, 120L)
+
+        listener.handleNotification(Notification("other", this, 1L), null)
+        listener.handleNotification(malformedGcNotification, null)
+
+        assertThat(spans.finishedSpanItems).isEmpty()
     }
 
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
-        const val MIN_DURATION_MS = 5L
     }
 }

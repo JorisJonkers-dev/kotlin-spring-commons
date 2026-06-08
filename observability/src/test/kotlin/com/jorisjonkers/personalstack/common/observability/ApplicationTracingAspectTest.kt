@@ -34,6 +34,12 @@ class ApplicationTracingAspectTest {
     }
 
     @Test
+    fun `auto configuration creates the tracing aspect`() {
+        assertThat(ApplicationTracingAspectAutoConfiguration().applicationTracingAspect())
+            .isInstanceOf(ApplicationTracingAspect::class.java)
+    }
+
+    @Test
     fun `creates a span named ClassName_method with rendered arguments`() {
         proxied().greet("world")
         val recorded = spans.finishedSpanItems
@@ -87,10 +93,34 @@ class ApplicationTracingAspectTest {
         assertThat(recorded.name.length).isLessThan(120)
     }
 
+    @Test
+    fun `rendered arguments include separators nulls and total truncation`() {
+        proxied().combine(
+            "x".repeat(40),
+            null,
+            "y".repeat(40),
+            "z".repeat(40),
+        )
+
+        val recorded = spans.finishedSpanItems.single()
+        assertThat(recorded.name).startsWith("TracedService.combine(")
+        assertThat(recorded.name.length).isLessThan(120)
+        assertThat(recorded.attributes.asMap()).containsKey(
+            io.opentelemetry.api.common.AttributeKey.stringKey("code.args"),
+        )
+    }
+
     @Suppress("FunctionOnlyReturningConstant")
     @Service
     open class TracedService {
         open fun greet(name: String): String = "hello $name"
+
+        open fun combine(
+            first: String,
+            second: String?,
+            third: String,
+            fourth: String,
+        ): String = listOf(first, second, third, fourth).joinToString()
 
         open fun boom(): Nothing = throw IllegalStateException("nope")
     }
