@@ -23,7 +23,7 @@ class RabbitMqMessagingAutoConfigurationTest {
             .withBean(RabbitTemplate::class.java, Supplier { mockk(relaxed = true) })
 
     @Test
-    fun `registers default personal-stack topology from properties`() {
+    fun `registers default generic topology from properties`() {
         runner.run { context ->
             assertThat(context).hasNotFailed()
             assertThat(context).hasSingleBean(RabbitMqMessagingProperties::class.java)
@@ -35,18 +35,18 @@ class RabbitMqMessagingAutoConfigurationTest {
 
             val eventsExchange = context.getBean("rabbitMqEventsExchange", DirectExchange::class.java)
             val deadLetterExchange = context.getBean("rabbitMqDeadLetterExchange", DirectExchange::class.java)
-            assertThat(eventsExchange.name).isEqualTo("personal-stack.events")
-            assertThat(deadLetterExchange.name).isEqualTo("personal-stack.events.dlx")
+            assertThat(eventsExchange.name).isEqualTo("application.events")
+            assertThat(deadLetterExchange.name).isEqualTo("application.events.dlx")
 
             val topology = context.getBean(Declarables::class.java)
             val queues = topology.getDeclarablesByType(Queue::class.java).associateBy { it.name }
             assertThat(queues).containsOnlyKeys("auth.user-registered", "auth.user-registered.dlq")
             assertThat(queues.getValue("auth.user-registered").arguments)
-                .containsEntry("x-dead-letter-exchange", "personal-stack.events.dlx")
+                .containsEntry("x-dead-letter-exchange", "application.events.dlx")
                 .containsEntry("x-dead-letter-routing-key", "auth.user-registered.dlq")
 
             val binding = topology.getDeclarablesByType(Binding::class.java).single()
-            assertThat(binding.exchange).isEqualTo("personal-stack.events")
+            assertThat(binding.exchange).isEqualTo("application.events")
             assertThat(binding.destination).isEqualTo("auth.user-registered")
             assertThat(binding.routingKey).isEqualTo("auth.user.registered")
         }

@@ -60,7 +60,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.NOT_FOUND)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/not-found"),
+                type = ProblemTypes.named("not-found"),
                 title = "Resource Not Found",
                 status = HttpStatus.NOT_FOUND,
                 detail = ex.message,
@@ -77,7 +77,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.NOT_FOUND)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/not-found"),
+                type = ProblemTypes.named("not-found"),
                 title = "Resource Not Found",
                 status = HttpStatus.NOT_FOUND,
                 detail = ex.message ?: "The referenced resource does not exist",
@@ -94,7 +94,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.NOT_FOUND)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/not-found"),
+                type = ProblemTypes.named("not-found"),
                 title = "Resource Not Found",
                 status = HttpStatus.NOT_FOUND,
                 detail = ex.message ?: "No matching record",
@@ -112,9 +112,7 @@ open class GlobalExceptionHandler {
         val body =
             problem(
                 type =
-                    URI.create(
-                        "https://jorisjonkers.dev/errors/${ex.code.lowercase().replace('_', '-')}",
-                    ),
+                    ProblemTypes.named(ex.code),
                 title =
                     ex.code
                         .replace('_', ' ')
@@ -135,7 +133,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.BAD_REQUEST)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/bad-request"),
+                type = ProblemTypes.named("bad-request"),
                 title = "Bad Request",
                 status = HttpStatus.BAD_REQUEST,
                 detail = ex.message ?: "Invalid request",
@@ -152,7 +150,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.CONFLICT)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/conflict"),
+                type = ProblemTypes.named("conflict"),
                 title = "Conflict",
                 status = HttpStatus.CONFLICT,
                 detail = ex.message ?: "Request conflicts with current state",
@@ -177,7 +175,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/validation-error"),
+                type = ProblemTypes.named("validation-error"),
                 title = "Validation Error",
                 status = HttpStatus.UNPROCESSABLE_ENTITY,
                 detail = "One or more fields failed validation",
@@ -203,7 +201,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/validation-error"),
+                type = ProblemTypes.named("validation-error"),
                 title = "Validation Error",
                 status = HttpStatus.UNPROCESSABLE_ENTITY,
                 detail = "One or more parameters failed validation",
@@ -221,7 +219,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNSUPPORTED_MEDIA_TYPE)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/unsupported-media-type"),
+                type = ProblemTypes.named("unsupported-media-type"),
                 title = "Unsupported Media Type",
                 status = HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                 detail = ex.message,
@@ -243,7 +241,7 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/constraint-violation"),
+                type = ProblemTypes.named("constraint-violation"),
                 title = "Constraint violation",
                 status = HttpStatus.UNPROCESSABLE_ENTITY,
                 detail = detail,
@@ -264,7 +262,7 @@ open class GlobalExceptionHandler {
         log.debug("Unreadable request body: {}", ex.message)
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/bad-request"),
+                type = ProblemTypes.named("bad-request"),
                 title = "Bad Request",
                 status = HttpStatus.BAD_REQUEST,
                 detail = "Malformed or unreadable request body",
@@ -290,7 +288,7 @@ open class GlobalExceptionHandler {
         )
         val body =
             problem(
-                type = URI.create("https://jorisjonkers.dev/errors/internal-error"),
+                type = ProblemTypes.named("internal-error"),
                 title = "Internal Server Error",
                 status = HttpStatus.INTERNAL_SERVER_ERROR,
                 detail = "${ex.javaClass.simpleName}: $summary",

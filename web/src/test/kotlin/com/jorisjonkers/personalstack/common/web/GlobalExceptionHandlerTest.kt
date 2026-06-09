@@ -38,7 +38,7 @@ class GlobalExceptionHandlerTest {
         assertThat(body.status).isEqualTo(404)
         assertThat(body.title).isEqualTo("Resource Not Found")
         assertThat(body.detail).isEqualTo("User not found: 123")
-        assertThat(body.type).isEqualTo(URI.create("https://jorisjonkers.dev/errors/not-found"))
+        assertThat(body.type).isEqualTo(URI.create("urn:problem-type:not-found"))
         assertThat(body.instance).isEqualTo(URI.create("/api/v1/users/123"))
     }
 
@@ -86,7 +86,7 @@ class GlobalExceptionHandlerTest {
         assertThat(body.status).isEqualTo(400)
         assertThat(body.title).isEqualTo("Email taken")
         assertThat(body.detail).isEqualTo("Email already taken")
-        assertThat(body.type).isEqualTo(URI.create("https://jorisjonkers.dev/errors/email-taken"))
+        assertThat(body.type).isEqualTo(URI.create("urn:problem-type:email-taken"))
     }
 
     @Test
@@ -97,7 +97,7 @@ class GlobalExceptionHandlerTest {
 
         val body = response.body!!
         assertThat(body.title).isEqualTo("Forbidden")
-        assertThat(body.type).isEqualTo(URI.create("https://jorisjonkers.dev/errors/forbidden"))
+        assertThat(body.type).isEqualTo(URI.create("urn:problem-type:forbidden"))
     }
 
     @Test
@@ -307,7 +307,7 @@ class GlobalExceptionHandlerTest {
         assertThat(body.detail).contains("github_links")
         assertThat(body.errors).hasSize(1)
         assertThat(body.errors[0].field).isEqualTo("github_link_id")
-        assertThat(body.type).isEqualTo(URI.create("https://jorisjonkers.dev/errors/constraint-violation"))
+        assertThat(body.type).isEqualTo(URI.create("urn:problem-type:constraint-violation"))
     }
 
     @Test
@@ -317,7 +317,7 @@ class GlobalExceptionHandlerTest {
                 serverErrorMessage =
                     FakeServerErrorMessage(
                         constraint = "repositories_name_key",
-                        detail = "Key (name)=(personal-stack) already exists.",
+                        detail = "Key (name)=(example-service) already exists.",
                     ),
                 sqlState = "23505",
             )

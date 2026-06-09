@@ -53,7 +53,7 @@ open class SpringVaultTransitClient(
                 val keyVersion = version.toString().toInt()
                 VaultTransitKeyVersion(
                     version = keyVersion,
-                    keyId = "$keyName-v$keyVersion",
+                    keyId = "$keyName:v$keyVersion",
                     publicKey = parsePublicKey(publicKeyPem),
                 )
             }.sortedBy { it.version }
@@ -102,13 +102,20 @@ open class SpringVaultTransitClient(
 class VaultTransitJwtEncoder(
     private val transitClient: VaultTransitClient,
     private val keyName: String,
-    private val activeKey: VaultTransitKeyVersion,
+    private val activeKeySupplier: () -> VaultTransitKeyVersion,
 ) : JwtEncoder {
+    constructor(
+        transitClient: VaultTransitClient,
+        keyName: String,
+        activeKey: VaultTransitKeyVersion,
+    ) : this(transitClient, keyName, { activeKey })
+
     private val objectMapper = jacksonObjectMapper().findAndRegisterModules()
 
     override fun encode(parameters: JwtEncoderParameters): Jwt {
         val claims = parameters.claims
         val claimsMap = LinkedHashMap(claims.claims)
+        val activeKey = activeKeySupplier()
         val headerMap =
             linkedMapOf<String, Any>(
                 "alg" to "RS256",

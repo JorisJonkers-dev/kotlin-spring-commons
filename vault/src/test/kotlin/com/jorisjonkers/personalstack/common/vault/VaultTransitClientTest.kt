@@ -36,7 +36,7 @@ class VaultTransitClientTest {
         val keys = transitClient.readKeyVersions("auth-api-jwt")
 
         assertThat(keys).hasSize(2)
-        assertThat(keys.map { it.keyId }).containsExactly("auth-api-jwt-v1", "auth-api-jwt-v2")
+        assertThat(keys.map { it.keyId }).containsExactly("auth-api-jwt:v1", "auth-api-jwt:v2")
     }
 
     @Test

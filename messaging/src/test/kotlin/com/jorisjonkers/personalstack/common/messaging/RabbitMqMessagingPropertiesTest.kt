@@ -5,12 +5,12 @@ import org.junit.jupiter.api.Test
 
 class RabbitMqMessagingPropertiesTest {
     @Test
-    fun `defaults match personal-stack topology`() {
+    fun `defaults use generic topology names`() {
         val properties = RabbitMqMessagingProperties()
 
         assertThat(properties.enabled).isTrue()
-        assertThat(properties.exchange).isEqualTo("personal-stack.events")
-        assertThat(properties.deadLetterExchange).isEqualTo("personal-stack.events.dlx")
+        assertThat(properties.exchange).isEqualTo("application.events")
+        assertThat(properties.deadLetterExchange).isEqualTo("application.events.dlx")
         assertThat(properties.bindings).containsOnlyKeys("user-registered")
 
         val binding = properties.bindings.getValue("user-registered")

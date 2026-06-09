@@ -99,6 +99,20 @@ class OpenApiSliceExporterTest {
     }
 
     @Test
+    fun `uses default docs path for JSON and YAML writer helpers`() {
+        val jsonPath = tempDir.resolve("default-openapi.json")
+        val yamlPath = tempDir.resolve("default-openapi.yaml")
+
+        OpenApiSliceExporter.writeJson(mockMvcReturning(VALID_OPENAPI_JSON), jsonPath)
+        val yaml = OpenApiSliceExporter.exportYaml(mockMvcReturning(VALID_OPENAPI_JSON))
+        OpenApiSliceExporter.writeYaml(mockMvcReturning(VALID_OPENAPI_JSON), yamlPath)
+
+        assertThat(Files.readString(jsonPath)).contains("\"title\" : \"Stub API\"")
+        assertThat(yaml).contains("Stub API").endsWith("\n")
+        assertThat(Files.readString(yamlPath)).contains("Stub API").endsWith("\n")
+    }
+
+    @Test
     fun `writes JSON and YAML output files`() {
         val jsonPath = tempDir.resolve("spec/openapi.json")
         val yamlPath = tempDir.resolve("spec/openapi.yaml")

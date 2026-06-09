@@ -13,9 +13,9 @@ import org.springframework.stereotype.Service
 @ConditionalOnBean(JavaMailSender::class)
 open class EmailService(
     private val mailSender: JavaMailSender,
-    @param:Value("\${app.mail.from:auth@jorisjonkers.dev}")
+    @param:Value("\${app.mail.from:noreply@example.test}")
     private val fromAddress: String,
-    @param:Value("\${app.mail.from-name:jorisjonkers.dev}")
+    @param:Value("\${app.mail.from-name:Example Service}")
     private val fromName: String,
     @param:Value("\${app.mail.max-retries:3}")
     private val maxRetries: Int,

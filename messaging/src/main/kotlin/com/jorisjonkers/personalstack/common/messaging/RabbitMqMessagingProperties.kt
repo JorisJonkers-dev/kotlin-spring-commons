@@ -5,8 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = RabbitMqMessagingProperties.PREFIX)
 class RabbitMqMessagingProperties {
     var enabled: Boolean = true
-    var exchange: String = "personal-stack.events"
-    var deadLetterExchange: String = "personal-stack.events.dlx"
+    var exchange: String = "application.events"
+    var deadLetterExchange: String = "application.events.dlx"
     var bindings: MutableMap<String, RabbitMqBindingProperties> =
         linkedMapOf(
             "user-registered" to

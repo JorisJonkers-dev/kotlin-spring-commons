@@ -1,6 +1,6 @@
 # Kotlin Spring Commons
 
-Publishable Kotlin/Spring commons modules extracted from personal-stack.
+Publishable Kotlin/Spring commons modules extracted for reusable Spring services.
 
 ## Modules
 
@@ -45,13 +45,19 @@ The messaging module keeps its classes under `com.jorisjonkers.personalstack.com
 extratoast:
   messaging:
     enabled: true
-    exchange: personal-stack.events
-    dead-letter-exchange: personal-stack.events.dlx
+    exchange: application.events
+    dead-letter-exchange: application.events.dlx
     bindings:
       user-registered:
         queue: auth.user-registered
         routing-key: auth.user.registered
         dead-letter-queue: auth.user-registered.dlq
 ```
+
+## Round 3 Additions
+
+- `vault` adds Vault Transit JWT signing, cached JWKS, local RSA fallback, and Spring Authorization Server claim/client customization hooks under `auth.transit.*`.
+- `web` adds opt-in validation ProblemDetail advice, OpenAPI error schemas, CSRF bootstrap, and route-based in-memory rate limiting under `extratoast.web.*`.
+- `test-support` adds Spring-free system-test helpers under `com.jorisjonkers.personalstack.common.test.system`.
 
 Website reconciliation is out of scope.

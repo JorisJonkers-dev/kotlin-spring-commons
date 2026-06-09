@@ -29,11 +29,11 @@ class VaultTransitJwtEncoderTest {
         transitClient = mockk()
 
         val activeKey =
-            VaultTransitKeyVersion(
-                version = 3,
-                keyId = "auth-api-jwt-v3",
-                publicKey = publicKey,
-            )
+                VaultTransitKeyVersion(
+                    version = 3,
+                    keyId = "auth-api-jwt:v3",
+                    publicKey = publicKey,
+                )
         encoder = VaultTransitJwtEncoder(transitClient, "auth-api-jwt", activeKey)
 
         every { transitClient.sign(eq("auth-api-jwt"), any(), eq(3)) } answers {
@@ -50,7 +50,7 @@ class VaultTransitJwtEncoderTest {
         val claims =
             JwtClaimsSet
                 .builder()
-                .issuer("https://auth.jorisjonkers.dev")
+                .issuer("https://issuer.example.test")
                 .subject("user-123")
                 .claim("username", "alice")
                 .issuedAt(now)
@@ -62,7 +62,7 @@ class VaultTransitJwtEncoderTest {
 
         assertThat(jwt.subject).isEqualTo("user-123")
         assertThat(jwt.getClaimAsString("username")).isEqualTo("alice")
-        assertThat(jwt.headers["kid"]).isEqualTo("auth-api-jwt-v3")
+        assertThat(jwt.headers["kid"]).isEqualTo("auth-api-jwt:v3")
         verify { transitClient.sign(eq("auth-api-jwt"), any(), eq(3)) }
     }
 }
