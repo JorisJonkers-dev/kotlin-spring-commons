@@ -18,7 +18,7 @@ jobs:
     name: Workflow Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download actionlint
         env:
           ACTIONLINT_VERSION: "1.7.7"
@@ -32,7 +32,7 @@ jobs:
     name: Build And Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
