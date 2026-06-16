@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.1...v0.6.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **ci:** stop Release and Publish workflows racing to publish ([#19](https://github.com/ExtraToast/kotlin-spring-commons/issues/19)) ([7a68a13](https://github.com/ExtraToast/kotlin-spring-commons/commit/7a68a1364693627f5aec1301b6d28ea1da502ad6))
+
 ## [0.6.1](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.0...v0.6.1) (2026-06-16)
 
 
