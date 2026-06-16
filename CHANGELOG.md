@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.0...v0.6.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **web:** load WebUtilitiesAutoConfiguration without springdoc on the classpath ([#17](https://github.com/ExtraToast/kotlin-spring-commons/issues/17)) ([e67bea0](https://github.com/ExtraToast/kotlin-spring-commons/commit/e67bea04c100e511e58e53f0be64776dde46388f))
+
 ## [0.6.0](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.5.0...v0.6.0) (2026-06-16)
 
 
