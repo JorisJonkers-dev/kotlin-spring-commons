@@ -23,6 +23,7 @@ include(
     ":email",
     ":events",
     ":exceptions",
+    ":identity",
     ":messaging",
     ":observability",
     ":test-support",
