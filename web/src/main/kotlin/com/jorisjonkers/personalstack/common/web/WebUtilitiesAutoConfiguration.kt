@@ -1,12 +1,12 @@
 package com.jorisjonkers.personalstack.common.web
 
-import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 import org.springframework.security.web.csrf.CsrfToken
 
 @AutoConfiguration
@@ -17,13 +17,6 @@ open class WebUtilitiesAutoConfiguration {
     @ConditionalOnProperty("extratoast.web.problem-details.validation-enabled", havingValue = "true")
     open fun validationProblemDetailsAdvice(properties: WebUtilitiesProperties): ValidationProblemDetailsAdvice =
         ValidationProblemDetailsAdvice(properties.problemDetails)
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnClass(OpenApiCustomizer::class)
-    @ConditionalOnProperty("extratoast.web.problem-details.open-api-schemas-enabled", havingValue = "true")
-    open fun openApiErrorSchemas(properties: WebUtilitiesProperties): OpenApiErrorSchemas =
-        OpenApiErrorSchemas(properties.problemDetails)
 
     @Bean
     @ConditionalOnMissingBean
@@ -54,4 +47,14 @@ open class WebUtilitiesAutoConfiguration {
             rules = properties.rateLimit.rules,
             trustedProxyCidrs = properties.rateLimit.trustedProxyCidrs,
         )
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = ["org.springdoc.core.customizers.OpenApiCustomizer"])
+    @ConditionalOnProperty("extratoast.web.problem-details.open-api-schemas-enabled", havingValue = "true")
+    open class OpenApiErrorSchemasConfiguration {
+        @Bean
+        @ConditionalOnMissingBean
+        open fun openApiErrorSchemas(properties: WebUtilitiesProperties): OpenApiErrorSchemas =
+            OpenApiErrorSchemas(properties.problemDetails)
+    }
 }
