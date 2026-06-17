@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.4...v0.6.5) (2026-06-17)
+
+
+### Bug Fixes
+
+* **web:** GlobalExceptionHandler outranks Boot's built-in problem-details handler ([#25](https://github.com/ExtraToast/kotlin-spring-commons/issues/25)) ([adbf8f2](https://github.com/ExtraToast/kotlin-spring-commons/commit/adbf8f2d8b1739e65875c594257df6d2e1935a31))
+
 ## [0.6.4](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.3...v0.6.4) (2026-06-17)
 
 
