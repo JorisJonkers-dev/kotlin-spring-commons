@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.3...v0.6.4) (2026-06-17)
+
+
+### Bug Fixes
+
+* **web:** map HandlerMethodValidationException to 422 ([#23](https://github.com/ExtraToast/kotlin-spring-commons/issues/23)) ([44a6343](https://github.com/ExtraToast/kotlin-spring-commons/commit/44a634357f3cbfd30cce571d76fffc01aca7e748))
+
 ## [0.6.3](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.2...v0.6.3) (2026-06-17)
 
 
