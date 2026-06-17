@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.2...v0.6.3) (2026-06-17)
+
+
+### Bug Fixes
+
+* **web:** expose spring-security-web transitively (api) ([#21](https://github.com/ExtraToast/kotlin-spring-commons/issues/21)) ([c9fd3e7](https://github.com/ExtraToast/kotlin-spring-commons/commit/c9fd3e72e7fdd30a7069ad5ed1172713c367cd3e))
+
 ## [0.6.2](https://github.com/ExtraToast/kotlin-spring-commons/compare/v0.6.1...v0.6.2) (2026-06-16)
 
 
