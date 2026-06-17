@@ -12,7 +12,12 @@ dependencies {
     compileOnly(libs.spring.boot.starter.web)
     compileOnly(libs.spring.boot.starter.validation)
     compileOnly(libs.spring.boot.autoconfigure)
-    compileOnly(libs.spring.security.web)
+    // spring-security-web is integral to this module's filters (CsrfTokenController,
+    // PublicAuthRateLimitFilter's IpAddressMatcher), so it is exposed transitively.
+    // compileOnly here regressed consumers without their own spring-security-web
+    // (NoClassDefFoundError org.springframework.security.web.csrf.CsrfToken during
+    // WebUtilitiesAutoConfiguration introspection).
+    api(libs.spring.security.web)
     compileOnly(libs.springdoc.openapi.starter.webmvc.api)
     compileOnly(libs.spring.tx)
 
