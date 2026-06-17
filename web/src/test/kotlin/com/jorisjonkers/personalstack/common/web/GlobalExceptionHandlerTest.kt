@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.validation.BindingResult
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.context.request.WebRequest
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 import org.springframework.validation.FieldError as SpringFieldError
 
@@ -165,6 +166,21 @@ class GlobalExceptionHandlerTest {
         assertThat(body.errors[1].field).isEqualTo("name")
         assertThat(body.errors[1].message).isEqualTo("Invalid value")
         assertThat(body.errors[1].rejectedValue).isNull()
+    }
+
+    @Test
+    fun `handleHandlerMethodValidation returns a 422 validation problem`() {
+        val ex = mockk<HandlerMethodValidationException>(relaxed = true)
+
+        val response = handler.handleHandlerMethodValidation(ex, webRequest())
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY)
+        val body = response.body!!
+        assertThat(body.status).isEqualTo(422)
+        assertThat(body.title).isEqualTo("Validation Error")
+        assertThat(body.detail).isEqualTo("One or more fields failed validation")
+        assertThat(body.type).isEqualTo(URI.create("urn:problem-type:validation-error"))
+        assertThat(body.errors).isEmpty()
     }
 
     @Test

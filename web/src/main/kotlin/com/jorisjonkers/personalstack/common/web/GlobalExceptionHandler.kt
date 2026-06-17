@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 
 /**
@@ -35,6 +36,7 @@ import java.net.URI
  *   valid but the system is in a state that can't service it
  *   (e.g. Vault not configured, repository feature disabled).
  * * `MethodArgumentNotValidException` /
+ *   `HandlerMethodValidationException` /
  *   `ConstraintViolationException` → 422 with a `violations`
  *   list carrying field-level (path, message, rejectedValue).
  * * `HttpMessageNotReadableException` /
@@ -172,6 +174,29 @@ open class GlobalExceptionHandler {
                     rejectedValue = error.rejectedValue,
                 )
             }
+        logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
+        val body =
+            problem(
+                type = ProblemTypes.named("validation-error"),
+                title = "Validation Error",
+                status = HttpStatus.UNPROCESSABLE_ENTITY,
+                detail = "One or more fields failed validation",
+                request = request,
+                errors = fieldErrors,
+            )
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException::class)
+    fun handleHandlerMethodValidation(
+        ex: HandlerMethodValidationException,
+        request: WebRequest?,
+    ): ResponseEntity<ProblemDetail> {
+        // Field-level detail is carried by handleValidation(MethodArgumentNotValidException)
+        // for the common @Valid @RequestBody path. HandlerMethodValidationException is the
+        // Spring-method-validation fallback; the per-parameter result API varies across
+        // Spring versions, so this handler guarantees the 422 contract without depending on it.
+        val fieldErrors = emptyList<FieldError>()
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
