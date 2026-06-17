@@ -5,6 +5,8 @@ import com.jorisjonkers.personalstack.common.exception.NotFoundException
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.Order
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.http.HttpStatus
@@ -45,11 +47,20 @@ import java.net.URI
  *   first useful line of `message` (truncated to ~500 chars) +
  *   the MDC `traceId` so support can correlate to logs.
  *
- * Subclasses (`@Order` higher) may handle integration-specific
- * exceptions (Fabric8's `KubernetesClientException`, vault errors)
- * before the generic chain runs.
+ * Application advices that handle integration-specific exceptions
+ * (Fabric8's `KubernetesClientException`, vault errors) must sit at
+ * `@Order(Ordered.HIGHEST_PRECEDENCE)` to run before this one.
+ *
+ * Ordered just below `HIGHEST_PRECEDENCE` so this advice takes
+ * precedence over Spring Boot's built-in `ResponseEntityExceptionHandler`
+ * / problem-details handler (registered at `LOWEST_PRECEDENCE`). Without
+ * this, framework exceptions like `MethodArgumentNotValidException` are
+ * mapped by Boot to a `400 about:blank` ProblemDetail instead of this
+ * advice's `422` validation document, while app advices at
+ * `HIGHEST_PRECEDENCE` still win for their specific types.
  */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE + 1000)
 @Suppress("TooManyFunctions", "LargeClass")
 open class GlobalExceptionHandler {
     private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
