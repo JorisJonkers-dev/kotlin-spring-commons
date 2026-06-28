@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.6.5...v0.7.0) (2026-06-28)
+
+
+### Features
+
+* publish commons under JorisJonkers Maven coordinates ([#3](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/3)) ([8df8420](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/8df842016d9ac12043b85af3cf1094e5e5e457dd))
+
 ## [0.6.5](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.6.4...v0.6.5) (2026-06-17)
 
 
