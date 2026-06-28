@@ -20,7 +20,8 @@ class InMemoryRequestRateLimiterTest {
 
     @Test
     fun `caps tracked buckets to configured maximum`() {
-        val limiter = InMemoryRequestRateLimiter(maxBuckets = 3, bucketIdleTtl = Duration.ofHours(1), cleanupInterval = 1)
+        val limiter =
+            InMemoryRequestRateLimiter(maxBuckets = 3, bucketIdleTtl = Duration.ofHours(1), cleanupInterval = 1)
 
         repeat(20) { limiter.tryAcquire("key-$it", 1, Duration.ofMinutes(1)) }
 

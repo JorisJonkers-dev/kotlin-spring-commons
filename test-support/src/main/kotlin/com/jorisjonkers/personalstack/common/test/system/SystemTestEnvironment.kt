@@ -1,7 +1,10 @@
 package com.jorisjonkers.personalstack.common.test.system
 
 class SystemTestEnvironment(
-    private val properties: Map<String, String> = System.getProperties().stringPropertyNames().associateWith(System::getProperty),
+    private val properties: Map<String, String> =
+        System.getProperties().stringPropertyNames().associateWith(
+            System::getProperty,
+        ),
 ) {
     fun string(
         key: String,

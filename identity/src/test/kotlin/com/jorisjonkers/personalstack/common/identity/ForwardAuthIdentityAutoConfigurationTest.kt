@@ -24,8 +24,7 @@ class ForwardAuthIdentityAutoConfigurationTest {
                 "extratoast.identity.jwks-uri=https://issuer.example/.well-known/jwks.json",
                 "extratoast.identity.issuer=https://issuer.example",
                 "extratoast.identity.audience=personal-stack",
-            )
-            .run { context ->
+            ).run { context ->
                 assertThat(context).hasNotFailed()
                 assertThat(context).hasSingleBean(ForwardAuthIdentityProperties::class.java)
                 assertThat(context).hasSingleBean(JwtDecoder::class.java)

@@ -14,10 +14,11 @@ class RegisteredClientFactoryTest {
                     clientId = "docs",
                     clientSecret = "{noop}secret",
                     authenticationMethods = setOf(ClientAuthenticationMethod.CLIENT_SECRET_BASIC),
-                    authorizationGrantTypes = setOf(
-                        AuthorizationGrantType.AUTHORIZATION_CODE,
-                        AuthorizationGrantType.REFRESH_TOKEN,
-                    ),
+                    authorizationGrantTypes =
+                        setOf(
+                            AuthorizationGrantType.AUTHORIZATION_CODE,
+                            AuthorizationGrantType.REFRESH_TOKEN,
+                        ),
                     redirectUris = setOf("https://example.test/callback"),
                     scopes = setOf("openid", "profile"),
                 ),

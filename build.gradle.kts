@@ -105,11 +105,6 @@ subprojects {
                         }
                     }
                 }
-                create<MavenPublication>("mavenJavaLegacy") {
-                    from(components["java"])
-                    groupId = "dev.extratoast"
-                    artifactId = "kotlin-commons-${project.name}"
-                }
             }
             repositories {
                 maven {

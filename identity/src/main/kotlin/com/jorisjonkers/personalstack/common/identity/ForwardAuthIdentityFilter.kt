@@ -37,16 +37,15 @@ class ForwardAuthIdentityFilter(
         val principal =
             runCatching {
                 jwtDecoder.decode(credential.token).toPrincipal(credential.source)
-            }
-                .getOrElse { exception ->
-                    when (exception) {
-                        is JwtException, is IllegalArgumentException -> {
-                            writeUnauthorized(response)
-                            return
-                        }
-                        else -> throw exception
+            }.getOrElse { exception ->
+                when (exception) {
+                    is JwtException, is IllegalArgumentException -> {
+                        writeUnauthorized(response)
+                        return
                     }
+                    else -> throw exception
                 }
+            }
 
         request.setAttribute(ATTRIBUTE_NAME, principal)
         filterChain.doFilter(request, response)

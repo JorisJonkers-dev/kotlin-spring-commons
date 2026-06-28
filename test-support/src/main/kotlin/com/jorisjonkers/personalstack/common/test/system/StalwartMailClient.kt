@@ -43,7 +43,13 @@ class StalwartMailClient(
         subject: String,
     ): DeliveredEmail? =
         withFolder(write = false) { folder ->
-            folder.messages.firstOrNull { it.subject == subject && it.recipientsContains(recipient) }?.toDeliveredEmail()
+            folder.messages
+                .firstOrNull {
+                    it.subject == subject &&
+                        it.recipientsContains(
+                            recipient,
+                        )
+                }?.toDeliveredEmail()
         }
 
     fun assertEmailSent(
@@ -57,7 +63,9 @@ class StalwartMailClient(
             findEmail(recipient, subject)?.let { return it }
             Thread.sleep(pollIntervalMs)
         }
-        throw AssertionError("Expected email subject=\"$subject\" recipient=$recipient within ${timeoutMs}ms but none arrived")
+        throw AssertionError(
+            "Expected email subject=\"$subject\" recipient=$recipient within ${timeoutMs}ms but none arrived",
+        )
     }
 
     private fun <T> withFolder(
@@ -88,7 +96,12 @@ class StalwartMailClient(
     }
 
     private fun Message.toDeliveredEmail(): DeliveredEmail {
-        val to = (getRecipients(Message.RecipientType.TO) ?: emptyArray()).mapNotNull { (it as? InternetAddress)?.address }
+        val to =
+            (
+                getRecipients(
+                    Message.RecipientType.TO,
+                ) ?: emptyArray()
+            ).mapNotNull { (it as? InternetAddress)?.address }
         val body =
             when (val content = content) {
                 is String -> content

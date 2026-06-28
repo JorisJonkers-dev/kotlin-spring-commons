@@ -47,7 +47,12 @@ class PublicAuthRateLimitFilter(
             return
         }
 
-        val decision = limiter.tryAcquire("${rule.method.uppercase()}|${rule.pathPattern}|${resolveClientIp(request)}", rule.maxRequests, rule.window)
+        val decision =
+            limiter.tryAcquire(
+                "${rule.method.uppercase()}|${rule.pathPattern}|${resolveClientIp(request)}",
+                rule.maxRequests,
+                rule.window,
+            )
         if (decision.allowed) {
             filterChain.doFilter(request, response)
             return

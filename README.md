@@ -35,7 +35,7 @@ dependencies {
 }
 ```
 
-Spring auto-configuration metadata is split per module. The initial extraction keeps the existing `com.jorisjonkers.personalstack.common` package names; `dev.jorisjonkers` is the publishing group.
+Spring auto-configuration metadata is split per module. The initial extraction keeps the existing `com.jorisjonkers.personalstack.common` package names; this repository publishes only `dev.jorisjonkers` coordinates.
 
 ## Messaging Defaults
 
