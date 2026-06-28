@@ -3,7 +3,7 @@
 ## Technical Context
 
 - Runtime: Kotlin JVM with Java 21 toolchain and Spring Boot 4 / Spring Framework 7 dependency versions already used by the repository.
-- Build system: Gradle Kotlin DSL multi-module build. Existing publishing emits `dev.extratoast:kotlin-commons-<module>`.
+- Build system: Gradle Kotlin DSL multi-module build. Existing publishing emits `dev.jorisjonkers:kotlin-commons-<module>`.
 - Modules: extend existing `vault`, `web`, and `test-support` modules. No new module is needed.
 - Constraints: reference repos are read-only; avoid hardcoded personal-stack or website values; keep direct tests in-process; do not run networked Gradle or npm commands in this sandbox.
 

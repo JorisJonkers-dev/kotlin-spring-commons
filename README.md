@@ -4,23 +4,23 @@ Publishable Kotlin/Spring commons modules extracted for reusable Spring services
 
 ## Modules
 
-Each module is independently consumable under `dev.extratoast`:
+Each module is independently consumable under `dev.jorisjonkers`:
 
 | Module | Coordinate |
 | --- | --- |
-| `archunit-test` | `dev.extratoast:kotlin-commons-archunit-test:0.1.0` |
-| `blocks` | `dev.extratoast:kotlin-commons-blocks:0.1.0` |
-| `command` | `dev.extratoast:kotlin-commons-command:0.1.0` |
-| `crac` | `dev.extratoast:kotlin-commons-crac:0.1.0` |
-| `email` | `dev.extratoast:kotlin-commons-email:0.1.0` |
-| `events` | `dev.extratoast:kotlin-commons-events:0.1.0` |
-| `exceptions` | `dev.extratoast:kotlin-commons-exceptions:0.1.0` |
-| `messaging` | `dev.extratoast:kotlin-commons-messaging:0.4.0` |
-| `observability` | `dev.extratoast:kotlin-commons-observability:0.1.0` |
-| `test-support` | `dev.extratoast:kotlin-commons-test-support:0.1.0` |
-| `timing` | `dev.extratoast:kotlin-commons-timing:0.1.0` |
-| `vault` | `dev.extratoast:kotlin-commons-vault:0.1.0` |
-| `web` | `dev.extratoast:kotlin-commons-web:0.1.0` |
+| `archunit-test` | `dev.jorisjonkers:kotlin-commons-archunit-test:0.1.0` |
+| `blocks` | `dev.jorisjonkers:kotlin-commons-blocks:0.1.0` |
+| `command` | `dev.jorisjonkers:kotlin-commons-command:0.1.0` |
+| `crac` | `dev.jorisjonkers:kotlin-commons-crac:0.1.0` |
+| `email` | `dev.jorisjonkers:kotlin-commons-email:0.1.0` |
+| `events` | `dev.jorisjonkers:kotlin-commons-events:0.1.0` |
+| `exceptions` | `dev.jorisjonkers:kotlin-commons-exceptions:0.1.0` |
+| `messaging` | `dev.jorisjonkers:kotlin-commons-messaging:0.4.0` |
+| `observability` | `dev.jorisjonkers:kotlin-commons-observability:0.1.0` |
+| `test-support` | `dev.jorisjonkers:kotlin-commons-test-support:0.1.0` |
+| `timing` | `dev.jorisjonkers:kotlin-commons-timing:0.1.0` |
+| `vault` | `dev.jorisjonkers:kotlin-commons-vault:0.1.0` |
+| `web` | `dev.jorisjonkers:kotlin-commons-web:0.1.0` |
 
 ## Usage
 
@@ -28,14 +28,14 @@ Add only the modules a service needs:
 
 ```kotlin
 dependencies {
-    implementation("dev.extratoast:kotlin-commons-command:0.1.0")
-    implementation("dev.extratoast:kotlin-commons-exceptions:0.1.0")
-    implementation("dev.extratoast:kotlin-commons-web:0.1.0")
-    testImplementation("dev.extratoast:kotlin-commons-archunit-test:0.1.0")
+    implementation("dev.jorisjonkers:kotlin-commons-command:0.1.0")
+    implementation("dev.jorisjonkers:kotlin-commons-exceptions:0.1.0")
+    implementation("dev.jorisjonkers:kotlin-commons-web:0.1.0")
+    testImplementation("dev.jorisjonkers:kotlin-commons-archunit-test:0.1.0")
 }
 ```
 
-Spring auto-configuration metadata is split per module. The initial extraction keeps the existing `com.jorisjonkers.personalstack.common` package names; `dev.extratoast` is the publishing group.
+Spring auto-configuration metadata is split per module. The initial extraction keeps the existing `com.jorisjonkers.personalstack.common` package names; `dev.jorisjonkers` is the publishing group.
 
 ## Messaging Defaults
 

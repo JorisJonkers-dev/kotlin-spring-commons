@@ -8,7 +8,7 @@
 - [REQ-004] Web utilities MUST avoid domain-specific exception types, paths, domains, and route tables. Consumers MUST configure route rules and endpoint paths.
 - [REQ-005] The `test-support` module MUST provide reusable system-test helpers for FQCN sharding, Playwright browser lifecycle, navigation retry, RestAssured retry, configurable test environment values, TOTP test-code generation, and IMAP/Stalwart mail assertions.
 - [REQ-006] System-test support MUST keep account setup, database mutation helpers, endpoint names, and service-specific cookies out of the shared artifact.
-- [REQ-007] New code MUST follow the existing Gradle/Kotlin/Spring module layout and keep publish coordinates under `dev.extratoast:kotlin-commons-<module>`.
+- [REQ-007] New code MUST follow the existing Gradle/Kotlin/Spring module layout and keep publish coordinates under `dev.jorisjonkers:kotlin-commons-<module>`.
 - [REQ-008] Tests MUST be direct in-process tests wherever practical so the existing JaCoCo gate can remain green.
 
 ## Success Criteria
