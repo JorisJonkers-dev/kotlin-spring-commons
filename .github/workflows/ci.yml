@@ -18,7 +18,7 @@ jobs:
     name: Workflow Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Download actionlint
         env:
           ACTIONLINT_VERSION: "1.7.7"
