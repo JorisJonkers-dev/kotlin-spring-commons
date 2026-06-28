@@ -284,11 +284,9 @@ class ForwardAuthIdentityFilterTest {
                 if (includeRoles) {
                     claim("roles", roles)
                 }
-            }
-            .apply {
+            }.apply {
                 username?.let { claim("username", it) }
-            }
-            .issuedAt(Instant.parse("2026-06-16T00:00:00Z"))
+            }.issuedAt(Instant.parse("2026-06-16T00:00:00Z"))
             .expiresAt(Instant.parse("2026-06-16T00:05:00Z"))
             .build()
 }

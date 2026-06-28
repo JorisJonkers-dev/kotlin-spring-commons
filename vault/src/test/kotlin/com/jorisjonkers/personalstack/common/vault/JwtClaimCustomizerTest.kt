@@ -36,8 +36,7 @@ class JwtClaimCustomizerTest {
                 .with(
                     JwsHeader.with(SignatureAlgorithm.RS256),
                     JwtClaimsSet.builder().subject("alice"),
-                )
-                .registeredClient(registeredClient)
+                ).registeredClient(registeredClient)
                 .principal(TestingAuthenticationToken("alice", "n/a"))
                 .tokenType(OAuth2TokenType.ACCESS_TOKEN)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)

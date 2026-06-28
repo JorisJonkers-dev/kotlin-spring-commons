@@ -76,6 +76,5 @@ object RegisteredClientFactory {
     fun inMemoryRepository(
         definitions: Collection<RegisteredOAuth2Client>,
         customizers: List<RegisteredClientCustomizer> = emptyList(),
-    ): RegisteredClientRepository =
-        InMemoryRegisteredClientRepository(definitions.map { build(it, customizers) })
+    ): RegisteredClientRepository = InMemoryRegisteredClientRepository(definitions.map { build(it, customizers) })
 }

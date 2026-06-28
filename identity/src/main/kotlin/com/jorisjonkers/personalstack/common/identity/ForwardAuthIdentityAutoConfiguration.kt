@@ -60,13 +60,10 @@ open class ForwardAuthIdentityAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(CurrentPrincipalArgumentResolver::class)
-    open fun currentPrincipalArgumentResolver(): CurrentPrincipalArgumentResolver =
-        CurrentPrincipalArgumentResolver()
+    open fun currentPrincipalArgumentResolver(): CurrentPrincipalArgumentResolver = CurrentPrincipalArgumentResolver()
 
     @Bean
-    open fun currentPrincipalWebMvcConfigurer(
-        resolver: CurrentPrincipalArgumentResolver,
-    ): WebMvcConfigurer =
+    open fun currentPrincipalWebMvcConfigurer(resolver: CurrentPrincipalArgumentResolver): WebMvcConfigurer =
         object : WebMvcConfigurer {
             override fun addArgumentResolvers(resolvers: MutableList<HandlerMethodArgumentResolver>) {
                 resolvers += resolver

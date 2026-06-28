@@ -66,11 +66,12 @@ class PublicAuthRateLimitFilterTest {
     @Test
     fun `prefers x real ip from trusted proxy`() {
         val filter = PublicAuthRateLimitFilter(InMemoryRequestRateLimiter(cleanupInterval = 1), rules)
-        val request = MockHttpServletRequest("POST", "/auth/login").apply {
-            servletPath = "/auth/login"
-            remoteAddr = "127.0.0.1"
-            addHeader("X-Real-IP", "203.0.113.10")
-        }
+        val request =
+            MockHttpServletRequest("POST", "/auth/login").apply {
+                servletPath = "/auth/login"
+                remoteAddr = "127.0.0.1"
+                addHeader("X-Real-IP", "203.0.113.10")
+            }
 
         assertThat(filter.resolveClientIp(request)).isEqualTo("203.0.113.10")
     }

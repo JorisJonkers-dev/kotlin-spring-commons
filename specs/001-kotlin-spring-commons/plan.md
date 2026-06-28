@@ -3,7 +3,7 @@
 ## Technical Context
 
 - Runtime: Kotlin JVM on Java 21 with Spring Boot 4/Spring Framework 7 conventions already used by the repository.
-- Build system: Gradle Kotlin DSL multi-module build; root publishing config emits `dev.extratoast:kotlin-commons-<module>`.
+- Build system: Gradle Kotlin DSL multi-module build; root publishing config emits `dev.jorisjonkers:kotlin-commons-<module>`.
 - Dependencies: `:messaging` depends on `:events` for the `DomainEvent` publisher contract, includes Jackson modules for the JSON AMQP converter, uses Spring AMQP/Spring Boot auto-configuration as compile-only dependencies, and uses JUnit, AssertJ, MockK, and Spring Boot test support for brokerless tests.
 - Constraints: Keep the existing `com.jorisjonkers.personalstack.common.messaging` package, avoid hardcoded topology identifiers outside configuration-property defaults, keep each Spring auto-configuration module's imports local to that module, and satisfy the existing 80% JaCoCo gate.
 
@@ -32,7 +32,7 @@
 
 ## Requirement Mapping
 
-- [FR-001], [REQ-003], [REQ-010], [SC-001]: `settings.gradle.kts` includes `:messaging`; root publishing config gives coordinate `dev.extratoast:kotlin-commons-messaging`.
+- [FR-001], [REQ-003], [REQ-010], [SC-001]: `settings.gradle.kts` includes `:messaging`; root publishing config gives coordinate `dev.jorisjonkers:kotlin-commons-messaging`.
 - [FR-002], [REQ-011]: all messaging source remains under `com.jorisjonkers.personalstack.common.messaging`.
 - [FR-003], [REQ-012], [SC-002]: `RabbitMqMessagingProperties` owns exchange, dead-letter exchange, queue, routing key, and dead-letter queue names under `extratoast.messaging.*`.
 - [FR-004], [REQ-007], [REQ-013]: `AutoConfiguration.imports` contains only `RabbitMqMessagingAutoConfiguration`.

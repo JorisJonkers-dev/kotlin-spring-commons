@@ -2,10 +2,10 @@ package com.jorisjonkers.personalstack.common.web
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.core.MethodParameter
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.web.bind.MethodArgumentNotValidException
-import org.springframework.core.MethodParameter
 
 class ValidationProblemDetailsAdviceTest {
     private val request = MockHttpServletRequest("POST", "/widgets")
@@ -36,5 +36,7 @@ class ValidationProblemDetailsAdviceTest {
         fun create(request: CreateWidgetRequest) = request
     }
 
-    private data class CreateWidgetRequest(val name: String)
+    private data class CreateWidgetRequest(
+        val name: String,
+    )
 }

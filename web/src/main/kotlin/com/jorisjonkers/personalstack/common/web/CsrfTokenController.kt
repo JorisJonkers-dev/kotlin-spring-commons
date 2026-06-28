@@ -9,6 +9,5 @@ class CsrfTokenController(
     private val properties: WebUtilitiesProperties.CsrfProperties = WebUtilitiesProperties.CsrfProperties(),
 ) {
     @GetMapping("\${extratoast.web.csrf.path:/csrf}")
-    fun csrf(csrfToken: CsrfToken): Map<String, String> =
-        mapOf(properties.tokenField to csrfToken.token)
+    fun csrf(csrfToken: CsrfToken): Map<String, String> = mapOf(properties.tokenField to csrfToken.token)
 }

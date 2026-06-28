@@ -29,11 +29,11 @@ class VaultTransitJwtEncoderTest {
         transitClient = mockk()
 
         val activeKey =
-                VaultTransitKeyVersion(
-                    version = 3,
-                    keyId = "auth-api-jwt:v3",
-                    publicKey = publicKey,
-                )
+            VaultTransitKeyVersion(
+                version = 3,
+                keyId = "auth-api-jwt:v3",
+                publicKey = publicKey,
+            )
         encoder = VaultTransitJwtEncoder(transitClient, "auth-api-jwt", activeKey)
 
         every { transitClient.sign(eq("auth-api-jwt"), any(), eq(3)) } answers {

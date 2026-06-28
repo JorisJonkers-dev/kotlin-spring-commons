@@ -106,7 +106,8 @@ class ApplicationTracingAspectTest {
         assertThat(recorded.name).startsWith("TracedService.combine(")
         assertThat(recorded.name.length).isLessThan(120)
         assertThat(recorded.attributes.asMap()).containsKey(
-            io.opentelemetry.api.common.AttributeKey.stringKey("code.args"),
+            io.opentelemetry.api.common.AttributeKey
+                .stringKey("code.args"),
         )
     }
 

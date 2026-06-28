@@ -2,7 +2,7 @@
 
 ## Source Specification
 
-This plan mirrors the approved specification in `ExtraToast/api-contract-checks`
+This plan mirrors the approved specification in `JorisJonkers-dev/api-contract-checks`
 at branch `spec/build-time-openapi-export`, file
 `specs/002-build-time-openapi-export/spec.md`, read on 2026-06-08.
 
@@ -37,7 +37,7 @@ The shared helper participates in that slice by:
 Extend the existing `test-support` module and publish the helper under the
 existing coordinate:
 
-`dev.extratoast:kotlin-commons-test-support`
+`dev.jorisjonkers:kotlin-commons-test-support`
 
 This matches the approved spec's recommended home. The helper is test/build
 support and must not become a runtime dependency of service artifacts.

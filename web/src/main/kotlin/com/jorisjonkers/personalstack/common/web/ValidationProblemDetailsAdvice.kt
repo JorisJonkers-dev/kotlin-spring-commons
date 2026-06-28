@@ -7,7 +7,6 @@ import org.slf4j.MDC
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
-import org.springframework.validation.FieldError
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -16,7 +15,9 @@ import java.net.URI
 @RestControllerAdvice
 @Order(Ordered.HIGHEST_PRECEDENCE)
 class ValidationProblemDetailsAdvice(
-    private val properties: WebUtilitiesProperties.ProblemDetailsProperties = WebUtilitiesProperties.ProblemDetailsProperties(),
+    private val properties: WebUtilitiesProperties.ProblemDetailsProperties =
+        WebUtilitiesProperties
+            .ProblemDetailsProperties(),
 ) {
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleMethodArgumentNotValid(
@@ -32,15 +33,16 @@ class ValidationProblemDetailsAdvice(
                     code = it.code,
                     rejectedValue = it.rejectedValue,
                 )
-            } + ex.bindingResult.globalErrors.map {
-                validationError(
-                    objectName = it.objectName,
-                    field = null,
-                    message = it.defaultMessage,
-                    code = it.code,
-                    rejectedValue = null,
-                )
-            }
+            } +
+                ex.bindingResult.globalErrors.map {
+                    validationError(
+                        objectName = it.objectName,
+                        field = null,
+                        message = it.defaultMessage,
+                        code = it.code,
+                        rejectedValue = null,
+                    )
+                }
         return problem(request, errors)
     }
 

@@ -57,8 +57,7 @@ open class VaultJwtAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(RSAKey::class)
     @ConditionalOnProperty("auth.transit.enabled", havingValue = "false", matchIfMissing = true)
-    open fun localRsaJwk(properties: VaultJwtProperties): RSAKey =
-        LocalRsaJwkFactory.generate(properties.localKeyId)
+    open fun localRsaJwk(properties: VaultJwtProperties): RSAKey = LocalRsaJwkFactory.generate(properties.localKeyId)
 
     @Bean
     @ConditionalOnMissingBean(JWKSource::class)
@@ -71,6 +70,5 @@ open class VaultJwtAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(JwtEncoder::class)
     @ConditionalOnProperty("auth.transit.enabled", havingValue = "false", matchIfMissing = true)
-    open fun localJwtEncoder(jwkSource: JWKSource<SecurityContext>): JwtEncoder =
-        NimbusJwtEncoder(jwkSource)
+    open fun localJwtEncoder(jwkSource: JWKSource<SecurityContext>): JwtEncoder = NimbusJwtEncoder(jwkSource)
 }

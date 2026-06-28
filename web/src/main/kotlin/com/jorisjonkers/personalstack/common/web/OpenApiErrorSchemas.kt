@@ -9,10 +9,15 @@ import io.swagger.v3.oas.models.media.StringSchema
 import org.springdoc.core.customizers.OpenApiCustomizer
 
 class OpenApiErrorSchemas(
-    private val properties: WebUtilitiesProperties.ProblemDetailsProperties = WebUtilitiesProperties.ProblemDetailsProperties(),
+    private val properties: WebUtilitiesProperties.ProblemDetailsProperties =
+        WebUtilitiesProperties
+            .ProblemDetailsProperties(),
 ) : OpenApiCustomizer {
     override fun customise(openApi: OpenAPI) {
-        val components = openApi.components ?: io.swagger.v3.oas.models.Components().also { openApi.components = it }
+        val components =
+            openApi.components ?: io.swagger.v3.oas.models
+                .Components()
+                .also { openApi.components = it }
         components.addSchemas(properties.fieldErrorSchemaName, fieldErrorSchema())
         components.addSchemas(properties.apiErrorSchemaName, apiErrorSchema(properties.fieldErrorSchemaName))
     }
@@ -25,7 +30,10 @@ class OpenApiErrorSchemas(
             addProperty("status", IntegerSchema().example(400))
             addProperty("detail", StringSchema().example("Validation failed for request."))
             addProperty("instance", StringSchema().example("/api/resource"))
-            addProperty("errors", ArraySchema().items(Schema<Any>().`$ref`("#/components/schemas/$fieldErrorSchemaName")))
+            addProperty(
+                "errors",
+                ArraySchema().items(Schema<Any>().`$ref`("#/components/schemas/$fieldErrorSchemaName")),
+            )
             addProperty("traceId", StringSchema().example("a8c0c4e5f1c24a7e"))
         } as Schema<Any>
 

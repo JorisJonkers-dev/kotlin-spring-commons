@@ -61,8 +61,7 @@ class RabbitMqMessagingAutoConfigurationTest {
                 "extratoast.messaging.bindings.user-registered.queue=service.user-registered",
                 "extratoast.messaging.bindings.user-registered.routing-key=service.user.registered",
                 "extratoast.messaging.bindings.user-registered.dead-letter-queue=service.user-registered.dlq",
-            )
-            .run { context ->
+            ).run { context ->
                 assertThat(context).hasNotFailed()
 
                 val eventsExchange = context.getBean("rabbitMqEventsExchange", DirectExchange::class.java)

@@ -7,7 +7,7 @@
 - [x] T002 Inspect `personal-stack` assistant-api/auth-api export behavior and
   `contract-validate.yml` reference flow.
 - [x] T003 Choose the implementation home: extend `test-support` at
-  `dev.extratoast:kotlin-commons-test-support`.
+  `dev.jorisjonkers:kotlin-commons-test-support`.
 
 ## Implementation
 
