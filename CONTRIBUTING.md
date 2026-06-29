@@ -1,40 +1,18 @@
-# Contributing (JorisJonkers-dev conventions)
+# Contributing
 
-These conventions are identical across every JorisJonkers-dev repo. This repo is the
-template; new repos are bootstrapped from it (see `docs/REPO_SETUP.md`).
+This is a source-available proprietary project owned by Joris Jonkers.
 
-## Branch & PR flow
+External contributions are not accepted unless Joris Jonkers explicitly asks
+for them. Public pull requests may be closed without review.
 
-- Branch from `main`. Keep PRs small, reviewable, and revertable alone;
-  stacking (PR B on PR A) is fine.
-- Open a PR using the template. **Every PR links its tracking issue / epic.**
-- Merge method is **squash only** (enforced by the ruleset), and history is
-  linear. Use a conventional-commit PR title — release-please derives the next
-  version from it.
-- A PR merges only when the single required check, **`Pipeline Complete`**, is
-  green.
+If you were invited to contribute:
 
-## CI: one pipeline, one gate
+1. keep changes scoped to the requested repository and issue
+2. do not include secrets, private data, local scratch files, or generated
+   planning artifacts
+3. do not hand-edit `CHANGELOG.md`; release-please owns changelog updates
+4. include the relevant tests or validation output in the pull request
+5. use impersonal, professional commit and pull request wording
 
-Each repo has exactly one CI workflow whose terminal job is named **`Pipeline
-Complete`**. It `needs:` every gating job and fails unless all of them
-succeeded. The org ruleset requires only that one check, so adding/renaming a
-job never touches branch protection — just keep it in the aggregator's
-`needs:`. See `.github/workflows/ci.yml`.
-
-## Versioning
-
-Exact-pin everything; release via release-please. Full rules in
-`VERSIONING.md`.
-
-## Commit & PR voice
-
-Impersonal and professional. No `you`/`we`; lead with the observable behaviour
-or root cause, then the change. No hedging ("hopefully", "should be fine"); say
-what proves it works. Do not add co-author or generated-by trailers.
-
-## Tracking work
-
-Work is tracked as issues under a milestone, rolled up to an epic issue. Keep
-the issue checklist and status current as PRs land, and reference issues from
-PRs (`Closes #`, `Part of #`).
+Security vulnerabilities must be reported privately as described in
+`SECURITY.md`.

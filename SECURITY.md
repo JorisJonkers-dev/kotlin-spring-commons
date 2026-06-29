@@ -1,20 +1,35 @@
 # Security Policy
 
-## Reporting a vulnerability
+## Reporting A Vulnerability
 
-Report suspected vulnerabilities privately via GitHub Security Advisories
-("Report a vulnerability" on the repository's Security tab), not as a public
-issue. A maintainer will acknowledge and triage.
+Do not report vulnerabilities in public issues, pull requests, discussions, or
+commit comments.
 
-## Secrets
+Report suspected vulnerabilities privately to:
 
-- No secrets in the repository. `gitleaks` runs in CI (part of `Pipeline
-  Complete`); a hit fails the pipeline.
-- Runtime secrets come from Vault, never from committed files.
-- Example/fixture credentials must be obviously non-real and live in
-  `*.example.*` files (see `.gitleaks.toml`).
+- `security@jorisjonkers.dev`
 
-## Supported versions
+Include:
 
-Only the latest released `vX.Y.Z` is supported. Pin exact versions (see
-`VERSIONING.md`); do not depend on a moving branch.
+- affected repository and commit, tag, or version
+- concise impact description
+- reproduction steps or proof of concept
+- relevant logs with secrets and private data removed
+
+## Handling
+
+Security reports are reviewed privately. Public disclosure, issue creation, and
+fix details are coordinated by Joris Jonkers after the risk is understood and a
+remediation path exists.
+
+## Supported Code
+
+Only the current default branch and actively released packages or images are in
+scope. Archived repositories, old branches, and historical tags are not
+supported unless Joris Jonkers explicitly says otherwise.
+
+## Source Availability
+
+Public visibility does not grant permission to use, copy, modify, deploy,
+redistribute, or derive from this code. Repository licensing is governed by the
+root `LICENSE` file.
