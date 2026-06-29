@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.7.0...v0.7.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* align repo hygiene and CI warnings ([#5](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/5)) ([b86de94](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/b86de942553ff7412ad2c68be55afb1de3ac6798))
+
 ## [0.7.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.6.5...v0.7.0) (2026-06-28)
 
 
