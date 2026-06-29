@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.7.1...v0.8.0) (2026-06-29)
+
+
+### Features
+
+* add system test harness module ([#8](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/8)) ([a67518b](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/a67518b1ea46c2e6d6d469cc40a3910671f38486))
+
 ## [0.7.1](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.7.0...v0.7.1) (2026-06-29)
 
 
