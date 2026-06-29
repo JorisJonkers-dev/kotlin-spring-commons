@@ -33,10 +33,31 @@ The current source keeps the existing
 | `identity` | `dev.jorisjonkers:kotlin-commons-identity` |
 | `messaging` | `dev.jorisjonkers:kotlin-commons-messaging` |
 | `observability` | `dev.jorisjonkers:kotlin-commons-observability` |
+| `system-test-harness` | `dev.jorisjonkers:kotlin-commons-system-test-harness` |
 | `test-support` | `dev.jorisjonkers:kotlin-commons-test-support` |
 | `timing` | `dev.jorisjonkers:kotlin-commons-timing` |
 | `vault` | `dev.jorisjonkers:kotlin-commons-vault` |
 | `web` | `dev.jorisjonkers:kotlin-commons-web` |
+
+## System Test Harness
+
+`system-test-harness` contains reusable helpers for external system tests:
+generic target URL discovery, explicit image-tag validation, Testcontainers
+image resolution, Playwright browser lifecycle/sharding, and simple HTTP smoke
+checks. Callers own all service names, fixture data, target URLs, credentials,
+and scenarios.
+
+```kotlin
+val target = StackTarget.fromEnvironment(serviceNames = setOf("api", "ui"))
+val images = ImageTags.fromEnvironment(allowedServices = setOf("api", "ui"))
+
+StackSmokeSuite(
+    target = target,
+    images = images,
+    checks = listOf(StackSmokeCheck("api", "/health")),
+    requiredImageServices = setOf("api"),
+).run()
+```
 
 ## Links
 

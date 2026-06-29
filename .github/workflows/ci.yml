@@ -28,6 +28,20 @@ jobs:
       - name: 'Lint workflows'
         run: ./actionlint .github/workflows/*.yml
 
+  gitleaks:
+    name: 'Gitleaks'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - uses: 'actions/checkout@v7'
+      - name: 'Install gitleaks'
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: 'Scan working tree'
+        run: ./gitleaks detect --source . --redact --exit-code 1
+
   jvm-ci:
     name: 'JVM CI'
     uses: 'JorisJonkers-dev/github-workflows/.github/workflows/jvm-ci.yml@v0.8.0'
@@ -42,7 +56,7 @@ jobs:
   pipeline-complete:
     name: 'Pipeline Complete'
     if: always()
-    needs: [workflow-lint, jvm-ci]
+    needs: [workflow-lint, gitleaks, jvm-ci]
     runs-on: 'ubuntu-latest'
     steps:
       - name: 'Verify all gating jobs succeeded'

@@ -26,6 +26,7 @@ include(
     ":identity",
     ":messaging",
     ":observability",
+    ":system-test-harness",
     ":test-support",
     ":timing",
     ":vault",
