@@ -45,6 +45,7 @@ subprojects {
 
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()
+            jvmArgs("-Xshare:off")
             finalizedBy(tasks.named("jacocoTestReport"))
         }
 
@@ -86,8 +87,12 @@ subprojects {
                         url.set("https://github.com/JorisJonkers-dev/kotlin-spring-commons")
                         licenses {
                             license {
-                                name.set("MIT")
-                                url.set("https://opensource.org/licenses/MIT")
+                                name.set("Joris Jonkers Proprietary Source-Available License 1.0")
+                                url.set(
+                                    "https://github.com/JorisJonkers-dev/kotlin-spring-commons/blob/main/LICENSE",
+                                )
+                                distribution.set("repo")
+                                comments.set("SPDX-License-Identifier: LicenseRef-JorisJonkers-Proprietary-1.0")
                             }
                         }
                         developers {

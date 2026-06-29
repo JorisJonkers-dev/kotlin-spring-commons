@@ -1,2 +1,4 @@
-# Default owner for everything in this repo.
-* @JorisJonkers-dev
+# Required per repository. GitHub does not inherit CODEOWNERS from the org
+# defaults repository.
+
+* @JorisJonkers

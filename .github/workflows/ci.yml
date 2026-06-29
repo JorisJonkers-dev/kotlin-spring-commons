@@ -1,51 +1,51 @@
-name: CI
+name: 'CI'
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: ['main']
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: 'ci-${{ github.workflow }}-${{ github.ref }}'
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
-  contents: read
+  contents: 'read'
 
 jobs:
   workflow-lint:
-    name: Workflow Lint
-    runs-on: ubuntu-latest
+    name: 'Workflow Lint'
+    runs-on: 'ubuntu-latest'
     steps:
-      - uses: actions/checkout@v7
-      - name: Download actionlint
+      - uses: 'actions/checkout@v7'
+      - name: 'Download actionlint'
         env:
-          ACTIONLINT_VERSION: "1.7.7"
+          ACTIONLINT_VERSION: '1.7.7'
         run: |
           curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -o actionlint.tar.gz
           tar -xzf actionlint.tar.gz actionlint
-      - name: Lint workflows
+      - name: 'Lint workflows'
         run: ./actionlint .github/workflows/*.yml
 
   jvm-ci:
-    name: JVM CI
-    uses: JorisJonkers-dev/github-workflows/.github/workflows/jvm-ci.yml@v0.6.1
+    name: 'JVM CI'
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/jvm-ci.yml@v0.8.0'
     with:
-      java-version: "21"
-      gradle-args: --no-daemon --stacktrace
-      lint-gradle-args: build
-      test-gradle-args: test
+      java-version: '21'
+      gradle-args: '--no-daemon --stacktrace'
+      lint-gradle-args: 'build'
+      test-gradle-args: 'test'
     secrets:
       packages-token: ${{ secrets.GITHUB_TOKEN }}
 
   pipeline-complete:
-    name: Pipeline Complete
+    name: 'Pipeline Complete'
     if: always()
     needs: [workflow-lint, jvm-ci]
-    runs-on: ubuntu-latest
+    runs-on: 'ubuntu-latest'
     steps:
-      - name: Verify all gating jobs succeeded
-        uses: re-actors/alls-green@release/v1
+      - name: 'Verify all gating jobs succeeded'
+        uses: 're-actors/alls-green@release/v1'
         with:
           jobs: ${{ toJSON(needs) }}
