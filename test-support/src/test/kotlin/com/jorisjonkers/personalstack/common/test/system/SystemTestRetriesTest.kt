@@ -29,6 +29,29 @@ class SystemTestRetriesTest {
     }
 
     @Test
+    fun `uses default retry settings`() {
+        val result = SystemTestRetries.retryOnConnectionFailure { "ok" }
+
+        assertThat(result).isEqualTo("ok")
+    }
+
+    @Test
+    fun `backs off between connection failure retries`() {
+        val attempts = AtomicInteger()
+
+        val result =
+            SystemTestRetries.retryOnConnectionFailure(attempts = 2, delayMillis = 1) {
+                if (attempts.incrementAndGet() == 1) {
+                    throw ConnectException("refused")
+                }
+                "ok"
+            }
+
+        assertThat(result).isEqualTo("ok")
+        assertThat(attempts.get()).isEqualTo(2)
+    }
+
+    @Test
     fun `does not retry unrelated failures`() {
         val attempts = AtomicInteger()
 
