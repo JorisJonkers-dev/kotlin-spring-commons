@@ -4,6 +4,7 @@ package com.jorisjonkers.personalstack.common.messaging
 
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.amqp.core.Binding
 import org.springframework.amqp.core.Declarables
@@ -21,6 +22,7 @@ class RabbitMqMessagingAutoConfigurationTest {
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(RabbitMqMessagingAutoConfiguration::class.java))
             .withBean(RabbitTemplate::class.java, Supplier { mockk(relaxed = true) })
+    private val configuration = RabbitMqMessagingAutoConfiguration()
 
     @Test
     fun `registers default generic topology from properties`() {
@@ -89,6 +91,130 @@ class RabbitMqMessagingAutoConfigurationTest {
                 assertThat(context).doesNotHaveBean(Declarables::class.java)
                 assertThat(context).doesNotHaveBean(RabbitMqEventPublisher::class.java)
                 assertThat(context).doesNotHaveBean("rabbitMqEventsExchange")
+            }
+    }
+
+    @Test
+    fun `registers queue without dead letter topology when dead letter queue is absent`() {
+        val properties =
+            RabbitMqMessagingProperties().apply {
+                deadLetterExchange = "service.events.dlx"
+                bindings =
+                    linkedMapOf(
+                        "audit" to
+                            RabbitMqBindingProperties(
+                                queue = "audit.events",
+                                routingKey = "audit.created",
+                            ),
+                    )
+            }
+        val eventsExchange = DirectExchange("service.events")
+
+        val topology = configuration.rabbitMqTopology(properties, eventsExchange)
+
+        val queues = topology.getDeclarablesByType(Queue::class.java).associateBy { it.name }
+        assertThat(queues).containsOnlyKeys("audit.events")
+        assertThat(queues.getValue("audit.events").arguments).isEmpty()
+
+        val binding = topology.getDeclarablesByType(Binding::class.java).single()
+        assertThat(binding.exchange).isEqualTo("service.events")
+        assertThat(binding.destination).isEqualTo("audit.events")
+        assertThat(binding.routingKey).isEqualTo("audit.created")
+    }
+
+    @Test
+    fun `treats blank dead letter queue as absent`() {
+        val properties =
+            RabbitMqMessagingProperties().apply {
+                bindings =
+                    linkedMapOf(
+                        "audit" to
+                            RabbitMqBindingProperties(
+                                queue = "audit.events",
+                                routingKey = "audit.created",
+                                deadLetterQueue = " ",
+                            ),
+                    )
+            }
+
+        val topology = configuration.rabbitMqTopology(properties, DirectExchange("service.events"))
+
+        val queues = topology.getDeclarablesByType(Queue::class.java).associateBy { it.name }
+        assertThat(queues).containsOnlyKeys("audit.events")
+        assertThat(queues.getValue("audit.events").arguments).isEmpty()
+    }
+
+    @Test
+    fun `rejects blank queue names`() {
+        val properties =
+            RabbitMqMessagingProperties().apply {
+                bindings =
+                    linkedMapOf(
+                        "audit" to
+                            RabbitMqBindingProperties(
+                                queue = " ",
+                                routingKey = "audit.created",
+                            ),
+                    )
+            }
+
+        assertThatThrownBy {
+            configuration.rabbitMqTopology(properties, DirectExchange("service.events"))
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("extratoast.messaging.bindings.audit.queue must not be blank")
+    }
+
+    @Test
+    fun `rejects blank routing keys`() {
+        val properties =
+            RabbitMqMessagingProperties().apply {
+                bindings =
+                    linkedMapOf(
+                        "audit" to
+                            RabbitMqBindingProperties(
+                                queue = "audit.events",
+                                routingKey = " ",
+                            ),
+                    )
+            }
+
+        assertThatThrownBy {
+            configuration.rabbitMqTopology(properties, DirectExchange("service.events"))
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("extratoast.messaging.bindings.audit.routing-key must not be blank")
+    }
+
+    @Test
+    fun `backs off when user provides infrastructure beans`() {
+        val customEventsExchange = DirectExchange("custom.events")
+        val customDeadLetterExchange = DirectExchange("custom.events.dlx")
+        val customTopology = Declarables(Queue("custom.queue"))
+        val customMessageConverter = mockk<MessageConverter>()
+        val customPublisher = mockk<RabbitMqEventPublisher>()
+
+        runner
+            .withBean("rabbitMqEventsExchange", DirectExchange::class.java, Supplier { customEventsExchange })
+            .withBean("rabbitMqDeadLetterExchange", DirectExchange::class.java, Supplier { customDeadLetterExchange })
+            .withBean("rabbitMqTopology", Declarables::class.java, Supplier { customTopology })
+            .withBean(MessageConverter::class.java, Supplier { customMessageConverter })
+            .withBean(RabbitMqEventPublisher::class.java, Supplier { customPublisher })
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                assertThat(context.getBean("rabbitMqEventsExchange")).isSameAs(customEventsExchange)
+                assertThat(context.getBean("rabbitMqDeadLetterExchange")).isSameAs(customDeadLetterExchange)
+                assertThat(context.getBean("rabbitMqTopology")).isSameAs(customTopology)
+                assertThat(context.getBean(MessageConverter::class.java)).isSameAs(customMessageConverter)
+                assertThat(context.getBean(RabbitMqEventPublisher::class.java)).isSameAs(customPublisher)
+            }
+    }
+
+    @Test
+    fun `does not register publisher without rabbit template`() {
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(RabbitMqMessagingAutoConfiguration::class.java))
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                assertThat(context).doesNotHaveBean(RabbitMqEventPublisher::class.java)
             }
     }
 }
