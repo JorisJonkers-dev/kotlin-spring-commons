@@ -60,6 +60,20 @@ class VaultSecretProviderTest {
     }
 
     @Test
+    fun `getSecret throws when key value is null`() {
+        val response = mockk<VaultResponse>()
+        val data = hashMapOf<String, Any?>("password" to null)
+        every { vaultTemplate.read("secret/data/myapp") } returns response
+        @Suppress("UNCHECKED_CAST")
+        every { response.data } returns data as Map<String, Any>
+
+        assertThatThrownBy {
+            provider.getSecret("secret/data/myapp", "password")
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("Key 'password' not found at Vault path: secret/data/myapp")
+    }
+
+    @Test
     fun `getSecret converts non-string values to string`() {
         val response = mockk<VaultResponse>()
         every { vaultTemplate.read("secret/data/myapp") } returns response

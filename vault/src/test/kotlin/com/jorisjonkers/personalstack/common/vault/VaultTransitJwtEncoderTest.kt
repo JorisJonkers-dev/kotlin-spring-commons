@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
@@ -64,5 +65,35 @@ class VaultTransitJwtEncoderTest {
         assertThat(jwt.getClaimAsString("username")).isEqualTo("alice")
         assertThat(jwt.headers["kid"]).isEqualTo("auth-api-jwt:v3")
         verify { transitClient.sign(eq("auth-api-jwt"), any(), eq(3)) }
+    }
+
+    @Test
+    fun `encoder rejects issued at without later expiry`() {
+        val now = Instant.now()
+        val claims =
+            JwtClaimsSet
+                .builder()
+                .subject("user-123")
+                .issuedAt(now)
+                .build()
+
+        assertThatThrownBy {
+            encoder.encode(JwtEncoderParameters.from(claims))
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("expiresAt must be after issuedAt")
+    }
+
+    @Test
+    fun `encoder supplies timestamps when claims omit them`() {
+        val claims =
+            JwtClaimsSet
+                .builder()
+                .subject("user-123")
+                .build()
+
+        val token = encoder.encode(JwtEncoderParameters.from(claims))
+
+        assertThat(token.issuedAt).isNotNull
+        assertThat(token.expiresAt).isNotNull
     }
 }

@@ -49,4 +49,79 @@ class JwtClaimCustomizerTest {
         assertThat(claims["tenant"]).isEqualTo("test")
         assertThat(claims["client"]).isEqualTo("client-a")
     }
+
+    @Test
+    fun `empty customizer leaves claims unchanged`() {
+        val context =
+            jwtContext(
+                JwtClaimsSet
+                    .builder()
+                    .subject("alice")
+                    .claim("existing", "value"),
+            )
+
+        CompositeJwtClaimCustomizer.empty().customize(context)
+
+        assertThat(context.claims.build().claims).containsEntry("existing", "value")
+    }
+
+    @Test
+    fun `customizer ignores null claim values`() {
+        val customizer =
+            CompositeJwtClaimCustomizer(
+                listOf(
+                    JwtClaimCustomizer {
+                        it.claims["optional"] = null
+                        it.claims["required"] = "value"
+                    },
+                ),
+            )
+        val context = jwtContext(JwtClaimsSet.builder().subject("alice"))
+
+        customizer.customize(context)
+
+        assertThat(context.claims.build().claims)
+            .containsEntry("required", "value")
+            .doesNotContainKey("optional")
+    }
+
+    @Test
+    fun `customizer receives absent optional context fields`() {
+        var captured: JwtClaimCustomizationContext? = null
+        val customizer = CompositeJwtClaimCustomizer(listOf(JwtClaimCustomizer { captured = it }))
+        val context =
+            JwtEncodingContext
+                .with(
+                    JwsHeader.with(SignatureAlgorithm.RS256),
+                    JwtClaimsSet.builder().subject("alice"),
+                ).tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .build()
+
+        customizer.customize(context)
+
+        assertThat(captured?.principalName).isNull()
+        assertThat(captured?.clientId).isNull()
+        assertThat(captured?.authorizedScopes).isEmpty()
+    }
+
+    private fun jwtContext(claims: JwtClaimsSet.Builder): JwtEncodingContext =
+        JwtEncodingContext
+            .with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                claims,
+            ).registeredClient(
+                RegisteredClientFactory.build(
+                    RegisteredOAuth2Client(
+                        id = "id",
+                        clientId = "client-a",
+                        redirectUris = setOf("https://example.test/callback"),
+                        scopes = setOf("openid"),
+                    ),
+                ),
+            ).principal(TestingAuthenticationToken("alice", "n/a"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(setOf("openid"))
+            .build()
 }

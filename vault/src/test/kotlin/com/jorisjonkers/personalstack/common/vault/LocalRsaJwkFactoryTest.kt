@@ -31,4 +31,11 @@ class LocalRsaJwkFactoryTest {
         assertThat(token.tokenValue).isNotBlank()
         assertThat(source.get(JWKSelector(JWKMatcher.Builder().keyID("test-local").build()), null)).hasSize(1)
     }
+
+    @Test
+    fun `generate uses local development key id by default`() {
+        val key = LocalRsaJwkFactory.generate()
+
+        assertThat(key.keyID).isEqualTo("local-dev")
+    }
 }
