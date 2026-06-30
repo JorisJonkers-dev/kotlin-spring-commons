@@ -6,6 +6,13 @@ target/
 .gradle/
 node_modules/
 
+# Re-include hexagonal outbound-port source packages, which are literally named `out`
+# (driven ports) and would otherwise be swallowed by the build-output `out/` rule above.
+!**/src/main/kotlin/**/port/out/
+!**/src/main/kotlin/**/port/out/**
+!**/src/test/kotlin/**/port/out/
+!**/src/test/kotlin/**/port/out/**
+
 # Env / secrets (never commit)
 .env
 .env.*
