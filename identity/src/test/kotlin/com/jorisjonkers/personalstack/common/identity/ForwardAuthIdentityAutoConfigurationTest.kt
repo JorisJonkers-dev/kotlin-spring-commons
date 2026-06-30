@@ -1,14 +1,18 @@
 package com.jorisjonkers.personalstack.common.identity
 
 import io.mockk.mockk
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.boot.web.servlet.FilterRegistrationBean
+import org.springframework.security.oauth2.core.OAuth2TokenValidator
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import java.time.Instant
 import java.util.function.Supplier
 
 class ForwardAuthIdentityAutoConfigurationTest {
@@ -81,4 +85,73 @@ class ForwardAuthIdentityAutoConfigurationTest {
                 assertThat(context).hasSingleBean(FilterRegistrationBean::class.java)
             }
     }
+
+    @Test
+    fun `jwt decoder requires a jwks uri when auto configured`() {
+        val configuration = ForwardAuthIdentityAutoConfiguration()
+
+        assertThatThrownBy {
+            configuration.forwardAuthJwtDecoder(
+                ForwardAuthIdentityProperties(
+                    issuer = "https://issuer.example",
+                ),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("extratoast.identity.jwks-uri must be configured when extratoast.identity.enabled=true")
+    }
+
+    @Test
+    fun `jwt decoder requires an issuer when auto configured`() {
+        val configuration = ForwardAuthIdentityAutoConfiguration()
+
+        assertThatThrownBy {
+            configuration.forwardAuthJwtDecoder(
+                ForwardAuthIdentityProperties(
+                    jwksUri = "https://issuer.example/.well-known/jwks.json",
+                    issuer = " ",
+                ),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("extratoast.identity.issuer must be configured when extratoast.identity.enabled=true")
+    }
+
+    @Test
+    fun `audience validator accepts tokens with the configured audience`() {
+        val validator = audienceValidator("personal-stack")
+
+        val result = validator.validate(jwt(audience = listOf("personal-stack", "other-api")))
+
+        assertThat(result.hasErrors()).isFalse()
+    }
+
+    @Test
+    fun `audience validator rejects tokens without the configured audience`() {
+        val validator = audienceValidator("personal-stack")
+
+        val result = validator.validate(jwt(audience = listOf("other-api")))
+
+        assertThat(result.hasErrors()).isTrue()
+        val error = result.errors.single()
+        assertThat(error.errorCode).isEqualTo("invalid_token")
+        assertThat(error.description).isEqualTo("The required audience is missing.")
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun audienceValidator(audience: String): OAuth2TokenValidator<Jwt> {
+        val validatorClass =
+            ForwardAuthIdentityAutoConfiguration::class.java.declaredClasses
+                .single { it.simpleName == "AudienceValidator" }
+        val constructor = validatorClass.getDeclaredConstructor(String::class.java).apply { isAccessible = true }
+        return constructor.newInstance(audience) as OAuth2TokenValidator<Jwt>
+    }
+
+    private fun jwt(audience: List<String>): Jwt =
+        Jwt
+            .withTokenValue("token")
+            .header("alg", "RS256")
+            .subject("742780c2-6f21-4e2f-971a-29a6e5a3b8bb")
+            .audience(audience)
+            .issuedAt(Instant.parse("2026-06-16T00:00:00Z"))
+            .expiresAt(Instant.parse("2026-06-16T00:05:00Z"))
+            .build()
 }

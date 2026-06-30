@@ -5,6 +5,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import jakarta.servlet.FilterChain
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
@@ -84,6 +85,26 @@ class ForwardAuthIdentityFilterTest {
     }
 
     @Test
+    fun `unexpected decoder failure is propagated`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
+        val chainCalls = AtomicInteger()
+        every { jwtDecoder.decode("edge-token") } throws IllegalStateException("decoder unavailable")
+
+        assertThatThrownBy {
+            invoke(
+                filter = filter,
+                path = "/api/v1/widgets",
+                chainCalls = chainCalls,
+                headers = mapOf("X-Agents-Verified-Jwt" to "edge-token"),
+            )
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("decoder unavailable")
+
+        assertThat(chainCalls.get()).isZero()
+    }
+
+    @Test
     fun `missing credential on protected path returns unauthorized`() {
         val jwtDecoder = mockk<JwtDecoder>()
         val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
@@ -111,6 +132,25 @@ class ForwardAuthIdentityFilterTest {
                 filter = filter,
                 path = "/api/v1/health/live",
                 chainCalls = chainCalls,
+            )
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(chainCalls.get()).isEqualTo(1)
+        verify(exactly = 0) { jwtDecoder.decode(any()) }
+    }
+
+    @Test
+    fun `skip path falls back to request uri when servlet path is blank`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
+        val chainCalls = AtomicInteger()
+
+        val response =
+            invoke(
+                filter = filter,
+                path = "/api/v1/health/ready",
+                chainCalls = chainCalls,
+                servletPath = "",
             )
 
         assertThat(response.status).isEqualTo(200)
@@ -252,11 +292,12 @@ class ForwardAuthIdentityFilterTest {
         path: String,
         chainCalls: AtomicInteger,
         headers: Map<String, String> = emptyMap(),
+        servletPath: String = path,
     ): MockHttpServletResponse {
         lastPrincipal = null
         val request =
             MockHttpServletRequest("GET", path).apply {
-                servletPath = path
+                this.servletPath = servletPath
                 headers.forEach { (name, value) -> addHeader(name, value) }
             }
         val response = MockHttpServletResponse()
