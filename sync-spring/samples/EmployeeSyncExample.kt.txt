@@ -36,6 +36,11 @@ import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncCheckpoint
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncEffectOutbox
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncObserver
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncUnitOfWork
+import com.jorisjonkers.personalstack.common.sync.domain.SyncPorts
+import com.jorisjonkers.personalstack.common.sync.domain.SyncProjection
+import com.jorisjonkers.personalstack.common.sync.domain.localRecord
+import com.jorisjonkers.personalstack.common.sync.domain.remoteRecord
+import com.jorisjonkers.personalstack.common.sync.domain.syncKeys
 import com.jorisjonkers.personalstack.common.sync.domain.syncResource
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -237,8 +242,9 @@ object EmployeeMapper : SyncMapper<Employee, HrEmployeeDto, DepartmentId> {
 
 @Configuration
 class EmployeeSyncConfiguration {
+    // Ports are declared once as their own bean, separate from the mapping strategy.
     @Bean
-    fun employeeSyncDefinition(
+    fun employeeSyncPorts(
         employeeRepository: EmployeeSyncRepository,
         hrCatalog: HrEmployeeCatalog,
         lockManager: LockManager,
@@ -248,135 +254,41 @@ class EmployeeSyncConfiguration {
         observer: SyncObserver,
         idempotency: IdempotencyStore,
         checkpoints: SyncCheckpointStore,
+    ): SyncPorts<Employee, HrEmployeeDto, HrEmployeeId, EmployeeSyncKey, DepartmentId> =
+        SyncPorts(
+            localRepository = employeeRepository,
+            remoteCatalog = hrCatalog,
+            lockManager = lockManager,
+            unitOfWork = unitOfWork,
+            effectOutbox = outbox,
+            auditTrail = auditTrail,
+            observer = observer,
+            idempotencyStore = idempotency,
+            checkpointStore = checkpoints,
+        )
+
+    // The definition reads as a table of contents: wiring, strategies, keys, policy.
+    @Bean
+    fun employeeSyncDefinition(
+        ports: SyncPorts<Employee, HrEmployeeDto, HrEmployeeId, EmployeeSyncKey, DepartmentId>,
     ): SyncDefinition<Employee, HrEmployeeDto, HrEmployeeId, EmployeeSyncKey, DepartmentId> =
         syncResource("employee") {
-            localRepository(employeeRepository)
-            remoteCatalog(hrCatalog)
-            lockManager(lockManager)
-            unitOfWork(unitOfWork)
-            effectOutbox(outbox)
-            auditTrail(auditTrail)
-            observer(observer)
-            idempotencyStore(idempotency)
-            checkpointStore(checkpoints)
-
-            localProjector { employee ->
-                LocalRecord(
-                    aggregate = employee,
-                    localId = LocalId(employee.id.value),
-                    registration =
-                        SyncRegistration(
-                            remoteId = employee.remoteId,
-                            rememberedRemoteId = employee.rememberedRemoteId,
-                            lifecycle =
-                                when {
-                                    employee.remoteDeletedAt != null -> SyncRegistrationLifecycle.REMOTELY_DELETED
-                                    employee.remoteId != null -> SyncRegistrationLifecycle.LINKED
-                                    employee.rememberedRemoteId != null -> SyncRegistrationLifecycle.UNLINKED
-                                    else -> SyncRegistrationLifecycle.NEVER_LINKED
-                                },
-                            changedAt = employee.remoteDeletedAt,
-                            version = VersionStamp.Number(employee.version),
-                        ),
-                    keys =
-                        buildSet {
-                            employee.remoteId?.let { add(EmployeeSyncKey.Remote(it)) }
-                            add(EmployeeSyncKey.Email(employee.email.trim().lowercase()))
-                            employee.payrollNumber?.let { add(EmployeeSyncKey.PayrollNumber(it.trim().lowercase())) }
-                        },
-                )
-            }
-
-            remoteProjector { remote ->
-                RemoteRecord(
-                    record = remote,
-                    externalId = remote.id,
-                    keys =
-                        buildSet {
-                            add(EmployeeSyncKey.Remote(remote.id))
-                            add(EmployeeSyncKey.Email(remote.email.trim().lowercase()))
-                            remote.payrollNumber?.let { add(EmployeeSyncKey.PayrollNumber(it.trim().lowercase())) }
-                        },
-                    lifecycle =
-                        if (remote.deleted) {
-                            RemoteRecordLifecycle.DELETED
-                        } else {
-                            RemoteRecordLifecycle.ACTIVE
-                        },
-                    importable = remote.active || !remote.deleted,
-                    version = VersionStamp.Timestamp(remote.updatedAt),
-                    observedAt = Instant.now(),
-                )
-            }
-
+            ports(ports)
+            projection(EmployeeProjection)
             differ(EmployeeDiffer::diff)
             mapper(EmployeeMapper)
-
             matching {
-                pass(
-                    name = "remote-id",
-                    confidence = MatchConfidence.HARD,
-                    localKeys = { local ->
-                        local.registration.remoteId?.let { setOf(EmployeeSyncKey.Remote(it)) } ?: emptySet()
-                    },
-                    remoteKeys = { remote -> setOf(EmployeeSyncKey.Remote(remote.externalId)) },
-                )
-                pass(
-                    name = "remembered-remote-id",
-                    confidence = MatchConfidence.REMEMBERED_REMOTE_ID,
-                    localKeys = {
-                        it.registration.rememberedRemoteId
-                            ?.let { remembered -> setOf(EmployeeSyncKey.Remote(remembered)) }
-                            ?: emptySet()
-                    },
-                    remoteKeys = { remote -> setOf(EmployeeSyncKey.Remote(remote.externalId)) },
-                )
-                pass(
-                    name = "email",
-                    confidence = MatchConfidence.NATURAL_KEY,
-                    localKeys = { local -> local.keys.filterIsInstance<EmployeeSyncKey.Email>().toSet() },
-                    remoteKeys = { remote -> remote.keys.filterIsInstance<EmployeeSyncKey.Email>().toSet() },
-                )
-                pass(
-                    name = "payroll-number",
-                    confidence = MatchConfidence.NATURAL_KEY,
-                    localKeys = { local -> local.keys.filterIsInstance<EmployeeSyncKey.PayrollNumber>().toSet() },
-                    remoteKeys = { remote -> remote.keys.filterIsInstance<EmployeeSyncKey.PayrollNumber>().toSet() },
-                )
+                // Keys are declared once here; the verbs derive the local/remote extractors.
+                remoteId(EmployeeSyncKey::Remote)
+                rememberedRemoteId(EmployeeSyncKey::Remote)
+                natural(EmployeeSyncKey.Email::class.java, "email")
+                natural(EmployeeSyncKey.PayrollNumber::class.java, "payroll-number")
             }
-
             policies {
-                conflictPolicy(ConflictPolicy.failClosed())
-                importPolicy(ImportPolicy { remote -> remote.active && !remote.deleted })
-                missingRemotePolicy(
-                    MissingRemotePolicy { local, observedAt ->
-                        val remoteId = local.registration.remoteId
-                        if (remoteId == null) {
-                            SyncDecision.Unlink(
-                                local = local,
-                                unlinkReason =
-                                    UnlinkReason.Policy(
-                                        "local has no active remote id in authoritative employee list",
-                                    ),
-                            )
-                        } else {
-                            SyncDecision.Delete(
-                                local = local,
-                                signal =
-                                    RemoteDeleteSignal.MissingFromAuthoritativeList(
-                                        remoteId = remoteId,
-                                        observedAt = observedAt,
-                                    ),
-                            )
-                        }
-                    },
-                )
+                // conflictPolicy defaults to fail-closed; importability lives on the projection.
+                missingRemotePolicy(EmployeeMissingRemotePolicy)
             }
-
-            execution {
-                listTransactionMode = ListTransactionMode.PER_RECORD
-                pageSize = 500
-            }
+            // execution omitted: PER_RECORD and pageSize = 500 are the defaults.
         }
 
     @Bean
@@ -389,6 +301,66 @@ class EmployeeSyncConfiguration {
             list = factory.list(definition),
             spawn = factory.spawn(definition),
         )
+}
+
+/**
+ * Projection as a named, unit-testable object. `localRecord`/`remoteRecord` infer the registration
+ * lifecycle and build the key set; importability is the single source of truth here (active and not
+ * deleted), so no separate import policy is needed, and `observedAt` is left to reconciliation.
+ */
+object EmployeeProjection : SyncProjection<Employee, HrEmployeeDto, HrEmployeeId, EmployeeSyncKey> {
+    override fun local(local: Employee): LocalRecord<Employee, HrEmployeeId, EmployeeSyncKey> =
+        localRecord(
+            aggregate = local,
+            localId = LocalId(local.id.value),
+            remoteId = local.remoteId,
+            rememberedRemoteId = local.rememberedRemoteId,
+            remotelyDeletedAt = local.remoteDeletedAt,
+            version = VersionStamp.Number(local.version),
+            keys = employeeKeys(local.remoteId, local.email, local.payrollNumber),
+        )
+
+    override fun remote(remote: HrEmployeeDto): RemoteRecord<HrEmployeeDto, HrEmployeeId, EmployeeSyncKey> =
+        remoteRecord(
+            record = remote,
+            externalId = remote.id,
+            keys = employeeKeys(remote.id, remote.email, remote.payrollNumber),
+            deleted = remote.deleted,
+            importable = remote.active && !remote.deleted,
+            version = VersionStamp.Timestamp(remote.updatedAt),
+        )
+
+    private fun employeeKeys(
+        remoteId: HrEmployeeId?,
+        email: String,
+        payrollNumber: String?,
+    ): Set<EmployeeSyncKey> =
+        syncKeys(
+            remoteId?.let(EmployeeSyncKey::Remote),
+            EmployeeSyncKey.Email(email.trim().lowercase()),
+            payrollNumber?.trim()?.lowercase()?.let(EmployeeSyncKey::PayrollNumber),
+        )
+}
+
+/** Absence handling: unlink a record that never had an active link, otherwise soft-delete it. */
+object EmployeeMissingRemotePolicy : MissingRemotePolicy<Employee, HrEmployeeId, EmployeeSyncKey> {
+    override fun decide(
+        local: LocalRecord<Employee, HrEmployeeId, EmployeeSyncKey>,
+        observedAt: Instant,
+    ): SyncDecision<Employee, Nothing, HrEmployeeId> {
+        val remoteId = local.registration.remoteId
+        return if (remoteId == null) {
+            SyncDecision.Unlink(
+                local = local,
+                unlinkReason = UnlinkReason.Policy("local has no active remote id in authoritative employee list"),
+            )
+        } else {
+            SyncDecision.Delete(
+                local = local,
+                signal = RemoteDeleteSignal.MissingFromAuthoritativeList(remoteId = remoteId, observedAt = observedAt),
+            )
+        }
+    }
 }
 
 /** Convenience bundle of the three typed use cases for this resource. */
