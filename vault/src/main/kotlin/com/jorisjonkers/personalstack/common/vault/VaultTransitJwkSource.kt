@@ -14,6 +14,8 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 
+private const val DEFAULT_REFRESH_INTERVAL_MINUTES = 5L
+
 /**
  * JWKS source backed by Vault Transit public keys.
  *
@@ -24,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 class VaultTransitJwkSource(
     private val transitClient: VaultTransitClient,
     private val keyName: String,
-    private val refreshInterval: Duration = Duration.ofMinutes(5),
+    private val refreshInterval: Duration = Duration.ofMinutes(DEFAULT_REFRESH_INTERVAL_MINUTES),
     private val clock: Clock = Clock.systemUTC(),
 ) : JWKSource<SecurityContext> {
     private val current = AtomicReference(JWKSet(emptyList<RSAKey>()))

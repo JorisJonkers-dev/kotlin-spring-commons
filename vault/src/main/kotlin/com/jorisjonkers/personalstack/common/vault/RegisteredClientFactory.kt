@@ -10,6 +10,9 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import java.time.Duration
 import java.util.UUID
 
+private const val DEFAULT_ACCESS_TOKEN_TTL_MINUTES = 15L
+private const val DEFAULT_REFRESH_TOKEN_TTL_DAYS = 7L
+
 data class RegisteredOAuth2Client(
     val clientId: String,
     val clientSecret: String? = null,
@@ -20,8 +23,8 @@ data class RegisteredOAuth2Client(
     val scopes: Set<String>,
     val requireProofKey: Boolean = true,
     val requireAuthorizationConsent: Boolean = false,
-    val accessTokenTtl: Duration = Duration.ofMinutes(15),
-    val refreshTokenTtl: Duration = Duration.ofDays(7),
+    val accessTokenTtl: Duration = Duration.ofMinutes(DEFAULT_ACCESS_TOKEN_TTL_MINUTES),
+    val refreshTokenTtl: Duration = Duration.ofDays(DEFAULT_REFRESH_TOKEN_TTL_DAYS),
     val reuseRefreshTokens: Boolean = false,
     val id: String = UUID.randomUUID().toString(),
 )
