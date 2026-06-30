@@ -13,14 +13,18 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// This module is held to full line coverage (overrides the repo-wide 0.80 floor).
-tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
-    violationRules {
-        rule {
-            limit {
-                counter = "LINE"
-                value = "COVEREDRATIO"
-                minimum = "1.00".toBigDecimal()
+// Hold this module to full line coverage, above the shared 0.80 floor that the
+// dev.jorisjonkers.testing convention applies. Adding a stricter rule keeps the convention's
+// configuration (filtered class dirs, aggregated execution data) intact.
+afterEvaluate {
+    tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+        violationRules {
+            rule {
+                limit {
+                    counter = "LINE"
+                    value = "COVEREDRATIO"
+                    minimum = "1.00".toBigDecimal()
+                }
             }
         }
     }

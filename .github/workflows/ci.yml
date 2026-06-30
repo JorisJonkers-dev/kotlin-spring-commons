@@ -42,21 +42,37 @@ jobs:
       - name: 'Scan working tree'
         run: ./gitleaks detect --source . --redact --exit-code 1
 
+  # Mint a token from the release App, which has cross-repo package read, so Gradle can resolve the
+  # dev.jorisjonkers convention plugins published to the gradle-conventions GitHub Packages registry.
+  # The default GITHUB_TOKEN can only read this repository's own packages.
+  packages-token:
+    name: 'Packages Token'
+    runs-on: 'ubuntu-latest'
+    outputs:
+      token: ${{ steps.app-token.outputs.token }}
+    steps:
+      - id: app-token
+        uses: 'actions/create-github-app-token@v3'
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
   jvm-ci:
     name: 'JVM CI'
+    needs: packages-token
     uses: 'JorisJonkers-dev/github-workflows/.github/workflows/jvm-ci.yml@v0.8.0'
     with:
       java-version: '21'
       gradle-args: '--no-daemon --stacktrace'
       lint-gradle-args: 'build'
       test-gradle-args: 'test'
-    secrets:
-      packages-token: ${{ secrets.GITHUB_TOKEN }}
+      packages-token: ${{ needs.packages-token.outputs.token }}
 
   pipeline-complete:
     name: 'Pipeline Complete'
     if: always()
-    needs: [workflow-lint, gitleaks, jvm-ci]
+    needs: [workflow-lint, gitleaks, packages-token, jvm-ci]
     runs-on: 'ubuntu-latest'
     steps:
       - name: 'Verify all gating jobs succeeded'

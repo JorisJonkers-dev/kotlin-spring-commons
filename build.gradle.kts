@@ -1,20 +1,13 @@
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.tasks.testing.Test
-import org.gradle.api.tasks.testing.TestDescriptor
-import org.gradle.api.tasks.testing.TestListener
-import org.gradle.api.tasks.testing.TestResult
-import org.gradle.api.tasks.testing.logging.TestExceptionFormat
-import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
-import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.spring) apply false
+    alias(libs.plugins.jorisjonkers.testing) apply false
 }
 
 allprojects {
@@ -32,7 +25,10 @@ allprojects {
 
 subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
-        apply(plugin = "jacoco")
+        // Shared testing conventions from the dev.jorisjonkers gradle commons: jacoco, test
+        // logging, an integration-test source set and coverage verification (LINE >= 0.80 by
+        // default; raised per module via the `extratoastTesting` extension where needed).
+        apply(plugin = "dev.jorisjonkers.testing")
 
         extensions.configure<JavaPluginExtension> {
             toolchain {
@@ -46,69 +42,6 @@ subprojects {
             compilerOptions {
                 jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
             }
-        }
-
-        tasks.withType<Test>().configureEach {
-            useJUnitPlatform()
-            jvmArgs("-Xshare:off")
-            finalizedBy(tasks.named("jacocoTestReport"))
-
-            // Make test execution visible: log skipped/failed events (with full stack traces) and
-            // print a per-module summary line so a successful run is never silent.
-            testLogging {
-                events(TestLogEvent.SKIPPED, TestLogEvent.FAILED)
-                exceptionFormat = TestExceptionFormat.FULL
-                showExceptions = true
-                showCauses = true
-                showStackTraces = true
-            }
-            val moduleName = project.name
-            addTestListener(
-                object : TestListener {
-                    override fun beforeSuite(suite: TestDescriptor) = Unit
-
-                    override fun beforeTest(test: TestDescriptor) = Unit
-
-                    override fun afterTest(test: TestDescriptor, result: TestResult) = Unit
-
-                    override fun afterSuite(suite: TestDescriptor, result: TestResult) {
-                        // Only the root suite of each module (no parent) carries the totals.
-                        if (suite.parent == null) {
-                            logger.lifecycle(
-                                "Test summary [$moduleName]: ${result.testCount} tests, " +
-                                    "${result.successfulTestCount} passed, " +
-                                    "${result.failedTestCount} failed, " +
-                                    "${result.skippedTestCount} skipped (${result.resultType}).",
-                            )
-                        }
-                    }
-                },
-            )
-        }
-
-        tasks.named<JacocoReport>("jacocoTestReport") {
-            dependsOn(tasks.named("test"))
-            reports {
-                xml.required.set(true)
-                html.required.set(true)
-            }
-        }
-
-        tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
-            dependsOn(tasks.named("test"))
-            violationRules {
-                rule {
-                    limit {
-                        counter = "LINE"
-                        value = "COVEREDRATIO"
-                        minimum = "0.80".toBigDecimal()
-                    }
-                }
-            }
-        }
-
-        tasks.named("check") {
-            dependsOn(tasks.named("jacocoTestCoverageVerification"))
         }
     }
 

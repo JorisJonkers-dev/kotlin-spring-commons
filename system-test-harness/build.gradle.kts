@@ -1,5 +1,4 @@
-import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
-import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.api.provider.ListProperty
 
 plugins {
     kotlin("jvm")
@@ -17,31 +16,9 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-val environmentBoundCoverageExcludes =
-    listOf(
-        "**/PlaywrightStackTestBase*",
-    )
-
-tasks.named<JacocoReport>("jacocoTestReport") {
-    classDirectories.setFrom(
-        files(
-            classDirectories.files.map {
-                fileTree(it) {
-                    exclude(environmentBoundCoverageExcludes)
-                }
-            },
-        ),
-    )
-}
-
-tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
-    classDirectories.setFrom(
-        files(
-            classDirectories.files.map {
-                fileTree(it) {
-                    exclude(environmentBoundCoverageExcludes)
-                }
-            },
-        ),
-    )
-}
+// Environment-bound fixtures require real infrastructure (a browser) to execute, so they are
+// excluded from coverage through the shared testing convention's exclusion list.
+@Suppress("UNCHECKED_CAST")
+(extensions.getByName("jacocoExclusionPatterns") as ListProperty<String>).addAll(
+    "**/PlaywrightStackTestBase*",
+)

@@ -1,5 +1,4 @@
-import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
-import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.api.provider.ListProperty
 
 plugins {
     kotlin("jvm")
@@ -25,35 +24,11 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// These system-test fixtures require real external infrastructure to execute:
-// PlaywrightSystemTestBase launches a browser, and StalwartMailClient opens an
-// IMAP connection. Keep pure helper classes covered by direct unit tests.
-val environmentBoundCoverageExcludes =
-    listOf(
-        "**/PlaywrightSystemTestBase*",
-        "**/StalwartMailClient*",
-    )
-
-tasks.named<JacocoReport>("jacocoTestReport") {
-    classDirectories.setFrom(
-        files(
-            classDirectories.files.map {
-                fileTree(it) {
-                    exclude(environmentBoundCoverageExcludes)
-                }
-            },
-        ),
-    )
-}
-
-tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
-    classDirectories.setFrom(
-        files(
-            classDirectories.files.map {
-                fileTree(it) {
-                    exclude(environmentBoundCoverageExcludes)
-                }
-            },
-        ),
-    )
-}
+// These system-test fixtures require real external infrastructure to execute: PlaywrightSystemTestBase
+// launches a browser and StalwartMailClient opens an IMAP connection. Exclude them from coverage via
+// the shared testing convention's exclusion list; pure helper classes stay covered by unit tests.
+@Suppress("UNCHECKED_CAST")
+(extensions.getByName("jacocoExclusionPatterns") as ListProperty<String>).addAll(
+    "**/PlaywrightSystemTestBase*",
+    "**/StalwartMailClient*",
+)
