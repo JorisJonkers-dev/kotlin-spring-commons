@@ -9,11 +9,13 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetLocalProjector
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetRemoteProjector
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import java.time.Duration
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.time.Instant
 
+// Structural threshold: reconciliation scenarios share one fixture-heavy suite for branch coverage.
+@Suppress("LargeClass")
 class ReconciliationTest {
     private val observedAt: Instant = Instant.parse("2026-06-30T12:00:00Z")
 
@@ -42,12 +44,17 @@ class ReconciliationTest {
         assertThat(update.action).isEqualTo(SyncAction.UPDATE)
         assertThat(update.reason).isEqualTo(SyncReason.RemoteChanged)
         assertThat(update.executable).isTrue()
-        assertThat((update as SyncDecision.Update<Widget, RemoteWidget, WidgetId, WidgetKey>).changes.fields.map { it.path.value })
-            .containsExactly("name")
+        assertThat(
+            (update as SyncDecision.Update<Widget, RemoteWidget, WidgetId, WidgetKey>).changes.fields.map {
+                it.path.value
+            },
+        ).containsExactly("name")
         exerciseGeneratedMembers(update)
     }
 
     @Test
+    // Structural threshold: tombstone and already-deleted assertions must stay in one scenario.
+    @Suppress("LongMethod")
     fun `reconcileOne deletes on remote tombstone and ignores tombstones already recorded locally`() {
         val reconciliation = reconciliation()
         val version = VersionStamp.Token("delete-version")
@@ -93,7 +100,9 @@ class ReconciliationTest {
             )
 
         assertThat(delete.action).isEqualTo(SyncAction.DELETE)
-        val tombstone = (delete as SyncDecision.Delete<Widget, WidgetId, WidgetKey>).signal as RemoteDeleteSignal.Tombstone<WidgetId>
+        val tombstone =
+            (delete as SyncDecision.Delete<Widget, WidgetId, WidgetKey>).signal
+                as RemoteDeleteSignal.Tombstone<WidgetId>
         assertThat(tombstone.remoteId).isEqualTo(id("w-delete"))
         assertThat(tombstone.observedAt).isEqualTo(remoteObservedAt)
         assertThat(tombstone.version).isEqualTo(version)
@@ -203,16 +212,22 @@ class ReconciliationTest {
         exerciseGeneratedMembers(delete)
 
         assertThat(unlink.action).isEqualTo(SyncAction.UNLINK)
-        assertThat((unlink as SyncDecision.Unlink<Widget, WidgetId, WidgetKey>).unlinkReason).isEqualTo(UnlinkReason.Policy("absent on remote"))
+        assertThat(
+            (unlink as SyncDecision.Unlink<Widget, WidgetId, WidgetKey>).unlinkReason,
+        ).isEqualTo(UnlinkReason.Policy("absent on remote"))
         exerciseGeneratedMembers(unlink)
 
         assertThat(conflict.action).isEqualTo(SyncAction.CONFLICT)
-        assertThat((conflict as SyncDecision.Conflict<WidgetId>).conflict.kind).isEqualTo(SyncConflictKind.LINK_MISMATCH)
+        assertThat(
+            (conflict as SyncDecision.Conflict<WidgetId>).conflict.kind,
+        ).isEqualTo(SyncConflictKind.LINK_MISMATCH)
         exerciseGeneratedMembers(conflict)
 
         assertThat(deletePolicyUnlinksWhenThereIsNoRememberedId.action).isEqualTo(SyncAction.UNLINK)
-        assertThat((deletePolicyUnlinksWhenThereIsNoRememberedId as SyncDecision.Unlink<Widget, WidgetId, WidgetKey>).unlinkReason)
-            .isEqualTo(UnlinkReason.ManualDetach)
+        assertThat(
+            (deletePolicyUnlinksWhenThereIsNoRememberedId as SyncDecision.Unlink<Widget, WidgetId, WidgetKey>)
+                .unlinkReason,
+        ).isEqualTo(UnlinkReason.ManualDetach)
     }
 
     @Test
@@ -239,15 +254,22 @@ class ReconciliationTest {
             )
 
         assertThat(restore.action).isEqualTo(SyncAction.RESTORE)
-        assertThat((restore as SyncDecision.Restore<Widget, RemoteWidget, WidgetId, WidgetKey>).changes.fields).hasSize(1)
+        assertThat(
+            (restore as SyncDecision.Restore<Widget, RemoteWidget, WidgetId, WidgetKey>).changes.fields,
+        ).hasSize(1)
         exerciseGeneratedMembers(restore)
 
         assertThat(relinkNeverLinked.action).isEqualTo(SyncAction.RELINK)
-        assertThat((relinkNeverLinked as SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>).remote.externalId).isEqualTo(id("w-relink-never"))
+        assertThat(
+            (relinkNeverLinked as SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>).remote.externalId,
+        ).isEqualTo(id("w-relink-never"))
         exerciseGeneratedMembers(relinkNeverLinked)
 
         assertThat(relinkDifferentActiveId.action).isEqualTo(SyncAction.RELINK)
-        assertThat((relinkDifferentActiveId as SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>).remote.externalId).isEqualTo(id("w-new"))
+        assertThat(
+            (relinkDifferentActiveId as SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>)
+                .remote.externalId,
+        ).isEqualTo(id("w-new"))
         exerciseGeneratedMembers(relinkDifferentActiveId)
     }
 
@@ -333,7 +355,12 @@ class ReconciliationTest {
                     listOf(
                         Widget.linked("local-dup-a", id("w-duplicate"), "SKU-DUP-A", "old"),
                         Widget.linked("local-dup-b", id("w-duplicate"), "SKU-DUP-B", "old"),
-                        Widget.linked("local-update-unrelated", id("w-update-unrelated"), "SKU-UPDATE-UNRELATED", "old"),
+                        Widget.linked(
+                            "local-update-unrelated",
+                            id("w-update-unrelated"),
+                            "SKU-UPDATE-UNRELATED",
+                            "old",
+                        ),
                     ),
                 remotes =
                     listOf(
@@ -507,7 +534,14 @@ class ReconciliationTest {
             )
         val sameIdButUnlinkedLifecycle =
             softOnly.reconcileMany(
-                locals = listOf(activeIdWithUnlinkedLifecycle("local-soft-unlinked", id("w-soft-unlinked"), "SKU-SOFT-UNLINKED")),
+                locals =
+                    listOf(
+                        activeIdWithUnlinkedLifecycle(
+                            "local-soft-unlinked",
+                            id("w-soft-unlinked"),
+                            "SKU-SOFT-UNLINKED",
+                        ),
+                    ),
                 remotes = listOf(remote("w-soft-unlinked", "SKU-SOFT-UNLINKED", "same")),
                 context = context(),
             )
@@ -517,6 +551,8 @@ class ReconciliationTest {
     }
 
     @Test
+    // Structural threshold: generated members for related policy types are asserted as one matrix.
+    @Suppress("LongMethod")
     fun `match plan and policy data classes expose generated members and defaults`() {
         val hard = hardRemoteIdPass()
         val defaultConfidencePass =
@@ -526,7 +562,10 @@ class ReconciliationTest {
                 remoteKeys = { emptySet() },
             )
         val plan = MatchPlan(listOf(hard, defaultConfidencePass))
-        val localRecord = WidgetLocalProjector.project(Widget.linked("local-candidate", id("w-candidate"), "SKU-CANDIDATE", "same"))
+        val localRecord =
+            WidgetLocalProjector.project(
+                Widget.linked("local-candidate", id("w-candidate"), "SKU-CANDIDATE", "same"),
+            )
         val remoteRecord = WidgetRemoteProjector.project(remote("w-candidate", "SKU-CANDIDATE", "same"))
         val candidate = MatchCandidate(skuPass(), localRecord, remoteRecord, WidgetKey.Sku("SKU-CANDIDATE"))
         val conflict =
@@ -537,12 +576,20 @@ class ReconciliationTest {
                 remote = remoteRecord,
                 message = "version skew",
             )
-        val syncPolicies = SyncPolicies<Widget, RemoteWidget, WidgetId, WidgetKey>(missingRemotePolicy = WidgetHarness.UNLINK_MISSING)
+        val syncPolicies =
+            SyncPolicies<Widget, RemoteWidget, WidgetId, WidgetKey>(missingRemotePolicy = WidgetHarness.UNLINK_MISSING)
         val options = SyncExecutionOptions()
 
         assertThat(defaultConfidencePass.confidence).isEqualTo(MatchConfidence.HARD)
         assertDataClassGeneratedMembers(plan, plan.copy(), plan.component1())
-        assertDataClassGeneratedMembers(hard, hard.copy(), hard.component1(), hard.component2(), hard.component3(), hard.component4())
+        assertDataClassGeneratedMembers(
+            hard,
+            hard.copy(),
+            hard.component1(),
+            hard.component2(),
+            hard.component3(),
+            hard.component4(),
+        )
         assertDataClassGeneratedMembers(
             candidate,
             candidate.copy(),
@@ -687,9 +734,24 @@ class ReconciliationTest {
             remoteKeys = { remote -> remote.keys.filterIsInstance<WidgetKey.Sku>().toSet() },
         )
 
-    private fun activeIdWithUnlinkedLifecycle(localId: String, remoteId: WidgetId, sku: String): Widget =
-        Widget.linked(localId, remoteId, sku, "same")
-            .copy(registration = Widget.linked(localId, remoteId, sku, "same").registration.copy(lifecycle = SyncRegistrationLifecycle.UNLINKED))
+    private fun activeIdWithUnlinkedLifecycle(
+        localId: String,
+        remoteId: WidgetId,
+        sku: String,
+    ): Widget =
+        Widget
+            .linked(localId, remoteId, sku, "same")
+            .copy(
+                registration =
+                    Widget
+                        .linked(
+                            localId,
+                            remoteId,
+                            sku,
+                            "same",
+                        ).registration
+                        .copy(lifecycle = SyncRegistrationLifecycle.UNLINKED),
+            )
 
     private fun id(value: String): WidgetId = WidgetId(value)
 
@@ -726,6 +788,8 @@ class ReconciliationTest {
     }
 
     @Suppress("UNCHECKED_CAST")
+    // Structural threshold: one exhaustive when keeps generated-member coverage aligned to variants.
+    @Suppress("LongMethod")
     private fun exerciseGeneratedMembers(decision: SyncDecision<Widget, RemoteWidget, WidgetId>) {
         assertThat(decision).isEqualTo(decision)
         assertThat(decision.hashCode()).isEqualTo(decision.hashCode())

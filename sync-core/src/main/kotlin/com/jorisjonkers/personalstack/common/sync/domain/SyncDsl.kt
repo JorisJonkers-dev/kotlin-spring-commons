@@ -34,7 +34,9 @@ annotation class SyncDslMarker
  *     remoteProjector { r -> RemoteRecord(...) }
  *     differ(EmployeeDiffer::diff)
  *     mapper(EmployeeMapper)
- *     matching { pass(name = "remote-id", confidence = MatchConfidence.HARD, localKeys = { ... }, remoteKeys = { ... }) }
+ *     matching {
+ *         pass(name = "remote-id", confidence = MatchConfidence.HARD, localKeys = { ... }, remoteKeys = { ... })
+ *     }
  *     policies { missingRemotePolicy(MissingRemotePolicy { local, at -> ... }) }
  *     execution { listTransactionMode = ListTransactionMode.PER_RECORD; pageSize = 500 }
  * }
@@ -46,8 +48,13 @@ fun <A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any> syncResource(
 ): SyncDefinition<A, R, RID, KEY, SCOPE> =
     SyncResourceBuilder<A, R, RID, KEY, SCOPE>(SyncName(name)).apply(block).build()
 
-/** Mutable builder backing [syncResource]. Not thread-safe; build once at wiring time. */
+/**
+ * Mutable builder backing [syncResource]. Not thread-safe; build once at wiring time.
+ *
+ * Intentionally exposes one setter per port/strategy so call sites stay explicit.
+ */
 @SyncDslMarker
+@Suppress("TooManyFunctions")
 class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private val name: SyncName,
 ) {
@@ -71,15 +78,41 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private var execution = SyncExecutionOptions()
 
     // --- outbound ports (mandatory ones are checked in build()) -----------------------------
-    fun localRepository(port: LocalSyncRepository<A, RID, SCOPE>) { localRepository = port }
-    fun remoteCatalog(port: RemoteCatalog<R, RID, KEY, SCOPE>) { remoteCatalog = port }
-    fun lockManager(port: LockManager) { lockManager = port }
-    fun unitOfWork(port: SyncUnitOfWork) { unitOfWork = port }
-    fun effectOutbox(port: SyncEffectOutbox) { effectOutbox = port }
-    fun auditTrail(port: AuditTrail) { auditTrail = port }
-    fun observer(port: SyncObserver) { observer = port }
-    fun idempotencyStore(port: IdempotencyStore) { idempotencyStore = port }
-    fun checkpointStore(port: SyncCheckpointStore) { checkpointStore = port }
+    fun localRepository(port: LocalSyncRepository<A, RID, SCOPE>) {
+        localRepository = port
+    }
+
+    fun remoteCatalog(port: RemoteCatalog<R, RID, KEY, SCOPE>) {
+        remoteCatalog = port
+    }
+
+    fun lockManager(port: LockManager) {
+        lockManager = port
+    }
+
+    fun unitOfWork(port: SyncUnitOfWork) {
+        unitOfWork = port
+    }
+
+    fun effectOutbox(port: SyncEffectOutbox) {
+        effectOutbox = port
+    }
+
+    fun auditTrail(port: AuditTrail) {
+        auditTrail = port
+    }
+
+    fun observer(port: SyncObserver) {
+        observer = port
+    }
+
+    fun idempotencyStore(port: IdempotencyStore) {
+        idempotencyStore = port
+    }
+
+    fun checkpointStore(port: SyncCheckpointStore) {
+        checkpointStore = port
+    }
 
     /**
      * Wire all nine outbound ports at once from a prepared [SyncPorts] bag. Sugar for the
@@ -117,11 +150,17 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         differ = SyncDiffer { local, remote -> diff(local, remote) }
     }
 
-    fun mapper(mapper: SyncMapper<A, R, SCOPE>) { this.mapper = mapper }
+    fun mapper(mapper: SyncMapper<A, R, SCOPE>) {
+        this.mapper = mapper
+    }
 
-    fun matching(block: MatchingBuilder<A, R, RID, KEY>.() -> Unit) { matching.apply(block) }
+    fun matching(block: MatchingBuilder<A, R, RID, KEY>.() -> Unit) {
+        matching.apply(block)
+    }
 
-    fun policies(block: PoliciesBuilder<A, R, RID, KEY>.() -> Unit) { policies.apply(block) }
+    fun policies(block: PoliciesBuilder<A, R, RID, KEY>.() -> Unit) {
+        policies.apply(block)
+    }
 
     fun execution(block: ExecutionBuilder.() -> Unit) {
         execution = ExecutionBuilder(execution).apply(block).build()
@@ -151,12 +190,16 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
                 ),
         )
 
-    private fun <T> requireConfigured(value: T?, what: String): T =
-        requireNonNull(value) { "syncResource(\"${name.value}\"): $what must be configured" }
+    private fun <T> requireConfigured(
+        value: T?,
+        what: String,
+    ): T = requireNonNull(value) { "syncResource(\"${name.value}\"): $what must be configured" }
 
     // Local helper to keep the message lazy without pulling in extra imports.
-    private inline fun <T> requireNonNull(value: T?, message: () -> String): T =
-        value ?: throw IllegalStateException(message())
+    private inline fun <T> requireNonNull(
+        value: T?,
+        message: () -> String,
+    ): T = value ?: throw IllegalStateException(message())
 }
 
 /** Collects the ordered list of [MatchPass]es for a resource. */
@@ -174,7 +217,10 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
     }
 
     /** Hard pass: the local *active* remote id against the remote external id. */
-    fun remoteId(keyOf: (RID) -> KEY, name: String = "remote-id") {
+    fun remoteId(
+        keyOf: (RID) -> KEY,
+        name: String = "remote-id",
+    ) {
         pass(
             name = name,
             confidence = MatchConfidence.HARD,
@@ -184,7 +230,10 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
     }
 
     /** Soft pass: the local *remembered* remote id against the remote external id (re-link). */
-    fun rememberedRemoteId(keyOf: (RID) -> KEY, name: String = "remembered-remote-id") {
+    fun rememberedRemoteId(
+        keyOf: (RID) -> KEY,
+        name: String = "remembered-remote-id",
+    ) {
         pass(
             name = name,
             confidence = MatchConfidence.REMEMBERED_REMOTE_ID,
@@ -224,11 +273,17 @@ class PoliciesBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
     private var importPolicy: ImportPolicy<R> = ImportPolicy { true }
     private var missingRemotePolicy: MissingRemotePolicy<A, RID, KEY>? = null
 
-    fun conflictPolicy(policy: ConflictPolicy<A, R, RID, KEY>) { conflictPolicy = policy }
+    fun conflictPolicy(policy: ConflictPolicy<A, R, RID, KEY>) {
+        conflictPolicy = policy
+    }
 
-    fun importPolicy(policy: ImportPolicy<R>) { importPolicy = policy }
+    fun importPolicy(policy: ImportPolicy<R>) {
+        importPolicy = policy
+    }
 
-    fun missingRemotePolicy(policy: MissingRemotePolicy<A, RID, KEY>) { missingRemotePolicy = policy }
+    fun missingRemotePolicy(policy: MissingRemotePolicy<A, RID, KEY>) {
+        missingRemotePolicy = policy
+    }
 
     fun build(): SyncPolicies<A, R, RID, KEY> =
         SyncPolicies(
@@ -242,7 +297,9 @@ class PoliciesBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
 
 /** Mutable view over [SyncExecutionOptions] so the DSL can set knobs by assignment. */
 @SyncDslMarker
-class ExecutionBuilder(initial: SyncExecutionOptions) {
+class ExecutionBuilder(
+    initial: SyncExecutionOptions,
+) {
     var listTransactionMode: ListTransactionMode = initial.listTransactionMode
     var pageSize: Int = initial.pageSize
     var lockTimeout: java.time.Duration = initial.lockTimeout

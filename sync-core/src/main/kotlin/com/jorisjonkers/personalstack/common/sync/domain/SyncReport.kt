@@ -15,7 +15,11 @@ enum class SyncReportStatus {
 /** Whether a run wants to be continued, and after how long (e.g. paging, rate-limit, partial). */
 sealed interface RequeueDecision {
     data object Done : RequeueDecision
-    data class Later(val delay: Duration, val reason: String) : RequeueDecision
+
+    data class Later(
+        val delay: Duration,
+        val reason: String,
+    ) : RequeueDecision
 }
 
 /** The result of acting on a single subject within a run. */

@@ -10,9 +10,11 @@ import java.time.Instant
  * (duplicate ids, multiple match candidates) is represented as a non-executable
  * [SyncDecision.Conflict], never a thrown exception. It performs no I/O and touches no port; the
  * application layer is responsible for fetching, locking, persisting and emitting effects.
+ * Keeps named helpers for each matching/decision branch so the core algorithm remains auditable.
  *
  * @param A aggregate, @param R remote record, @param RID remote id, @param KEY match key.
  */
+@Suppress("TooManyFunctions")
 class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
     private val localProjector: LocalProjector<A, RID, KEY>,
     private val remoteProjector: RemoteProjector<R, RID, KEY>,
@@ -40,7 +42,11 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
      * consuming matched records before later passes. Duplicate hard ids and ambiguous candidates
      * become conflicts scoped to the offending records; unrelated decisions stay executable.
      * The decision list is returned in a deterministic execution order.
+     *
+     * Kept as one loop because splitting the core multi-pass matching algorithm obscures the
+     * consume/remove invariants more than it reduces risk.
      */
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     fun reconcileMany(
         locals: Collection<A>,
         remotes: Collection<R>,
@@ -90,13 +96,12 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
                     0 -> Unit
                     1 -> {
                         val (ri, keyed) = candidates.entries.first().let { it.key to it.value }
-                        val (matchKey, remoteMatch) = keyed
+                        val remoteMatch = keyed.second
                         consumedLocals.add(li)
                         consumedRemotes.add(ri)
                         decisions +=
                             pairedDecision(
                                 pass = pass,
-                                matchKey = matchKey,
                                 localRaw = localEntry.first,
                                 localRecord = localEntry.second,
                                 remoteRaw = remoteMatch.first,
@@ -117,7 +122,10 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
                                         SyncConflictKind.AMBIGUOUS_MATCH
                                     },
                                 local = localEntry.second,
-                                remote = candidates.values.first().second.second,
+                                remote =
+                                    candidates.values
+                                        .first()
+                                        .second.second,
                                 message =
                                     "local matched ${candidates.size} remotes in pass '${pass.name}' " +
                                         "(confidence=${pass.confidence})",
@@ -166,7 +174,6 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
             localRecord != null && remoteRecord != null ->
                 pairedDecision(
                     pass = null,
-                    matchKey = null,
                     localRaw = localRaw!!,
                     localRecord = localRecord,
                     remoteRaw = remoteRaw!!,
@@ -189,49 +196,55 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
 
     private fun pairedDecision(
         pass: MatchPass<A, R, RID, KEY>?,
-        matchKey: KEY?,
         localRaw: A,
         localRecord: LocalRecord<A, RID, KEY>,
         remoteRaw: R,
         remoteRecord: RemoteRecord<R, RID, KEY>,
         observedAt: Instant,
-    ): SyncDecision<A, R, RID> {
-        // Remote reports deletion: delete unless we already recorded it (idempotent ignore).
+    ): SyncDecision<A, R, RID> =
         if (remoteRecord.lifecycle == RemoteRecordLifecycle.DELETED) {
-            return if (localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED) {
-                SyncDecision.Ignore(
-                    subject = SyncSubject.Pair(localRecord.localId, remoteRecord.externalId),
-                    reason = SyncReason.RemoteDeleted,
-                )
-            } else {
-                SyncDecision.Delete(
-                    local = localRecord,
-                    signal =
-                        RemoteDeleteSignal.Tombstone(
-                            remoteId = remoteRecord.externalId,
-                            observedAt = remoteRecord.observedAt ?: observedAt,
-                            version = remoteRecord.version,
-                        ),
-                )
-            }
-        }
-
-        val changes = differ.diff(localRaw, remoteRaw)
-
-        // Soft-deleted local + active remote -> bring it back.
-        if (localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED) {
-            return SyncDecision.Restore(local = localRecord, remote = remoteRecord, changes = changes)
-        }
-
-        // No active link, or a remembered/soft match to a different id -> relink.
-        if (needsRelink(localRecord.registration, remoteRecord.externalId, pass)) {
-            return SyncDecision.Relink(local = localRecord, remote = remoteRecord, changes = changes)
-        }
-
-        return if (changes.isEmpty) {
-            SyncDecision.Equal(local = localRecord, remote = remoteRecord)
+            remoteDeletedDecision(localRecord, remoteRecord, observedAt)
         } else {
-            SyncDecision.Update(local = localRecord, remote = remoteRecord, changes = changes)
+            activeRemoteDecision(pass, localRaw, localRecord, remoteRaw, remoteRecord)
+        }
+
+    private fun remoteDeletedDecision(
+        localRecord: LocalRecord<A, RID, KEY>,
+        remoteRecord: RemoteRecord<R, RID, KEY>,
+        observedAt: Instant,
+    ): SyncDecision<A, R, RID> =
+        if (localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED) {
+            SyncDecision.Ignore(
+                subject = SyncSubject.Pair(localRecord.localId, remoteRecord.externalId),
+                reason = SyncReason.RemoteDeleted,
+            )
+        } else {
+            SyncDecision.Delete(
+                local = localRecord,
+                signal =
+                    RemoteDeleteSignal.Tombstone(
+                        remoteId = remoteRecord.externalId,
+                        observedAt = remoteRecord.observedAt ?: observedAt,
+                        version = remoteRecord.version,
+                    ),
+            )
+        }
+
+    private fun activeRemoteDecision(
+        pass: MatchPass<A, R, RID, KEY>?,
+        localRaw: A,
+        localRecord: LocalRecord<A, RID, KEY>,
+        remoteRaw: R,
+        remoteRecord: RemoteRecord<R, RID, KEY>,
+    ): SyncDecision<A, R, RID> {
+        val changes = differ.diff(localRaw, remoteRaw)
+        return when {
+            localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED ->
+                SyncDecision.Restore(local = localRecord, remote = remoteRecord, changes = changes)
+            needsRelink(localRecord.registration, remoteRecord.externalId, pass) ->
+                SyncDecision.Relink(local = localRecord, remote = remoteRecord, changes = changes)
+            changes.isEmpty -> SyncDecision.Equal(local = localRecord, remote = remoteRecord)
+            else -> SyncDecision.Update(local = localRecord, remote = remoteRecord, changes = changes)
         }
     }
 
@@ -243,13 +256,15 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
         registration: SyncRegistration<RID>,
         externalId: RID,
         pass: MatchPass<A, R, RID, KEY>?,
-    ): Boolean {
-        val activeId = registration.remoteId
-        if (activeId == null) return true
-        if (activeId != externalId) return true
-        // Active id equals the matched remote id: a soft pass is just confirming an existing link.
-        return pass != null && pass.confidence != MatchConfidence.HARD && registration.lifecycle != SyncRegistrationLifecycle.LINKED
-    }
+    ): Boolean =
+        registration.remoteId?.let { activeId ->
+            activeId != externalId ||
+                (
+                    pass != null &&
+                        pass.confidence != MatchConfidence.HARD &&
+                        registration.lifecycle != SyncRegistrationLifecycle.LINKED
+                )
+        } ?: true
 
     private fun remoteOnlyDecision(
         remoteRecord: RemoteRecord<R, RID, KEY>,
@@ -334,31 +349,33 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
         target: Pair<R, RemoteRecord<R, RID, KEY>>,
     ): Int = remaining.indexOfFirst { it === target }
 
-    private fun orderDeterministically(
-        decisions: List<SyncDecision<A, R, RID>>,
-    ): List<SyncDecision<A, R, RID>> =
+    private fun orderDeterministically(decisions: List<SyncDecision<A, R, RID>>): List<SyncDecision<A, R, RID>> =
         decisions.sortedWith(
             compareBy<SyncDecision<A, R, RID>> { executionRank(it.action) }
                 .thenBy { it.subject.stableKey },
         )
 
-    private fun executionRank(action: SyncAction): Int =
-        when (action) {
-            SyncAction.IMPORT -> 0
-            SyncAction.RESTORE -> 1
-            SyncAction.RELINK -> 2
-            SyncAction.UPDATE -> 3
-            SyncAction.EQUAL -> 4
-            SyncAction.IGNORE -> 5
-            SyncAction.DELETE -> 6
-            SyncAction.UNLINK -> 7
-            SyncAction.RETRY -> 8
-            SyncAction.CONFLICT -> 9
-        }
+    private fun executionRank(action: SyncAction): Int = EXECUTION_ORDER.indexOf(action)
 
     private inner class DuplicateScan(
         val decisions: List<SyncDecision<A, R, RID>>,
         val consumedLocals: Set<Int>,
         val consumedRemotes: Set<Int>,
     )
+
+    private companion object {
+        private val EXECUTION_ORDER =
+            listOf(
+                SyncAction.IMPORT,
+                SyncAction.RESTORE,
+                SyncAction.RELINK,
+                SyncAction.UPDATE,
+                SyncAction.EQUAL,
+                SyncAction.IGNORE,
+                SyncAction.DELETE,
+                SyncAction.UNLINK,
+                SyncAction.RETRY,
+                SyncAction.CONFLICT,
+            )
+    }
 }

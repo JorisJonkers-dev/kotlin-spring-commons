@@ -7,6 +7,7 @@ import com.jorisjonkers.personalstack.common.sync.domain.ImportPolicy
 import com.jorisjonkers.personalstack.common.sync.domain.ListTransactionMode
 import com.jorisjonkers.personalstack.common.sync.domain.LocalId
 import com.jorisjonkers.personalstack.common.sync.domain.MatchConfidence
+import com.jorisjonkers.personalstack.common.sync.domain.MatchingBuilder
 import com.jorisjonkers.personalstack.common.sync.domain.MissingRemotePolicy
 import com.jorisjonkers.personalstack.common.sync.domain.RunId
 import com.jorisjonkers.personalstack.common.sync.domain.SyncContext
@@ -16,7 +17,6 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncName
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReason
 import com.jorisjonkers.personalstack.common.sync.domain.SyncSubject
 import com.jorisjonkers.personalstack.common.sync.domain.SyncTriggerSource
-import com.jorisjonkers.personalstack.common.sync.domain.MatchingBuilder
 import com.jorisjonkers.personalstack.common.sync.domain.UnlinkReason
 import com.jorisjonkers.personalstack.common.sync.domain.syncResource
 import java.time.Clock
@@ -61,10 +61,11 @@ class WidgetHarness internal constructor(
                     SyncDecision.Delete(
                         local = local,
                         signal =
-                            com.jorisjonkers.personalstack.common.sync.domain.RemoteDeleteSignal.MissingFromAuthoritativeList(
-                                remoteId = rememberedId,
-                                observedAt = observedAt,
-                            ),
+                            com.jorisjonkers.personalstack.common.sync.domain.RemoteDeleteSignal
+                                .MissingFromAuthoritativeList(
+                                    remoteId = rememberedId,
+                                    observedAt = observedAt,
+                                ),
                     )
                 } else {
                     SyncDecision.Unlink(local = local, unlinkReason = UnlinkReason.ManualDetach)
@@ -93,10 +94,11 @@ class WidgetHarness internal constructor(
             matchPasses: List<WidgetMatchPass> = listOf(WidgetMatchPass.REMOTE_ID, WidgetMatchPass.SKU),
             fixedInstant: Instant = Instant.parse("2026-06-30T00:00:00Z"),
         ): WidgetHarness {
-            val repository = InMemoryLocalSyncRepository<Widget, WidgetId, WidgetScope>(
-                keyOf = { it.registration.remoteId ?: it.registration.rememberedRemoteId },
-                scopeOf = { it.scope },
-            )
+            val repository =
+                InMemoryLocalSyncRepository<Widget, WidgetId, WidgetScope>(
+                    keyOf = { it.registration.remoteId ?: it.registration.rememberedRemoteId },
+                    scopeOf = { it.scope },
+                )
             val remoteCatalog = InMemoryRemoteCatalog<RemoteWidget, WidgetId, WidgetKey, WidgetScope>()
             val lockManager = InMemoryLockManager()
             val unitOfWork = InMemoryUnitOfWork()
@@ -192,8 +194,7 @@ enum class WidgetMatchPass {
  * Fixture factories for ambient sync values, so tests do not hand-roll [SyncContext]/[RunId] etc.
  */
 object SyncFixtures {
-    fun runId(value: String = "00000000-0000-0000-0000-000000000001"): RunId =
-        RunId(java.util.UUID.fromString(value))
+    fun runId(value: String = "00000000-0000-0000-0000-000000000001"): RunId = RunId(java.util.UUID.fromString(value))
 
     fun correlationId(value: String = "corr-1"): CorrelationId = CorrelationId(value)
 
@@ -218,8 +219,10 @@ object SyncFixtures {
 
     fun remoteSubject(id: WidgetId): SyncSubject<WidgetId> = SyncSubject.Remote(id)
 
-    fun pairSubject(localId: String?, id: WidgetId): SyncSubject<WidgetId> =
-        SyncSubject.Pair(localId?.let { LocalId(it) }, id)
+    fun pairSubject(
+        localId: String?,
+        id: WidgetId,
+    ): SyncSubject<WidgetId> = SyncSubject.Pair(localId?.let { LocalId(it) }, id)
 
     fun ignoreReason(message: String): SyncReason = SyncReason.Policy(message)
 }

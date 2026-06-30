@@ -9,10 +9,10 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetLocalProjector
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetRemoteProjector
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import java.time.Duration
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.time.Instant
 
 class DecisionPlanReportTest {
     private val remoteId = WidgetId("w-1")
@@ -20,6 +20,8 @@ class DecisionPlanReportTest {
     private val changedAt = Instant.parse("2026-06-30T12:00:00Z")
 
     @Test
+    // Structural threshold: this generated-contract test enumerates every decision variant together.
+    @Suppress("LongMethod")
     fun `sync actions reasons subjects and decisions expose their default contract`() {
         val local = localRecord()
         val remote = remoteRecord()
@@ -118,17 +120,17 @@ class DecisionPlanReportTest {
             listOf(import, update, equal, delete, unlinkRemembered, restore, relink, ignore, conflictDecision, retry)
                 .map { it.action },
         ).containsExactly(
-                SyncAction.IMPORT,
-                SyncAction.UPDATE,
-                SyncAction.EQUAL,
-                SyncAction.DELETE,
-                SyncAction.UNLINK,
-                SyncAction.RESTORE,
-                SyncAction.RELINK,
-                SyncAction.IGNORE,
-                SyncAction.CONFLICT,
-                SyncAction.RETRY,
-            )
+            SyncAction.IMPORT,
+            SyncAction.UPDATE,
+            SyncAction.EQUAL,
+            SyncAction.DELETE,
+            SyncAction.UNLINK,
+            SyncAction.RESTORE,
+            SyncAction.RELINK,
+            SyncAction.IGNORE,
+            SyncAction.CONFLICT,
+            SyncAction.RETRY,
+        )
         assertThat(import.subject).isEqualTo(SyncSubject.Remote(remoteId))
         assertThat(import.reason).isEqualTo(SyncReason.RemoteOnly)
         assertThat(update.subject).isEqualTo(SyncSubject.Pair(local.localId, remoteId))
@@ -238,6 +240,8 @@ class DecisionPlanReportTest {
     }
 
     @Test
+    // Structural threshold: status/report generated-member coverage is intentionally table-like.
+    @Suppress("LongMethod")
     fun `sync outcomes reports and requeue decisions cover statuses actions defaults and generated members`() {
         val context = SyncFixtures.context(scope = WidgetScope("default"))
         val startedAt = context.startedAt
@@ -318,6 +322,8 @@ class DecisionPlanReportTest {
     }
 
     @Test
+    // Structural threshold: match/conflict enum coverage is one generated-contract matrix.
+    @Suppress("LongMethod")
     fun `match plan candidates conflicts and enums expose all fields and generated members`() {
         val hardPass =
             MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>(

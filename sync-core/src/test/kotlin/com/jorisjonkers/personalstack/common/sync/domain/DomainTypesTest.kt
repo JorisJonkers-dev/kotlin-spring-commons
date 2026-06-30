@@ -5,11 +5,11 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.Widget
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetId
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
 
 class DomainTypesTest {
     private val instant: Instant = Instant.parse("2026-06-30T12:34:56Z")
@@ -341,6 +341,8 @@ class DomainTypesTest {
     }
 
     @Test
+    // Structural threshold: this generated-contract test covers all remote fetch/page variants.
+    @Suppress("LongMethod")
     fun `remote changes pages and fetch variants expose defaults and generated members`() {
         val remote = remoteRecord()
         val upsert = RemoteChange.Upsert(remote)

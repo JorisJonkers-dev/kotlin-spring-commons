@@ -54,16 +54,32 @@ sealed interface SyncSubject<out RID : Any> {
 /** The rationale behind a decision, for audit and to make CONFLICT/RETRY self-describing. */
 sealed interface SyncReason {
     data object RemoteOnly : SyncReason
+
     data object RemoteChanged : SyncReason
+
     data object AlreadyEqual : SyncReason
+
     data object RemoteDeleted : SyncReason
+
     data object LocalOnlyUnlinked : SyncReason
+
     data object NotImportable : SyncReason
+
     data object RestoreLinkedRecord : SyncReason
+
     data object RelinkByNaturalKey : SyncReason
-    data class Conflict(val conflict: SyncConflict<*, *, *, *>) : SyncReason
-    data class RetryLater(val failure: SyncFailure) : SyncReason
-    data class Policy(val message: String) : SyncReason
+
+    data class Conflict(
+        val conflict: SyncConflict<*, *, *, *>,
+    ) : SyncReason
+
+    data class RetryLater(
+        val failure: SyncFailure,
+    ) : SyncReason
+
+    data class Policy(
+        val message: String,
+    ) : SyncReason
 }
 
 /**

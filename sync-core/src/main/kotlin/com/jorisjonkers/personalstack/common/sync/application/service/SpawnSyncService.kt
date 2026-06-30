@@ -36,7 +36,11 @@ import java.time.Instant
  * directly inside the transaction; per-entity work is dispatched via the relayed effects after commit.
  * Returns a [SyncReport] with [RequeueDecision.Later] when a next cursor, retry hint, or partial
  * failure requires continuation.
+ *
+ * Keeps named helpers for each discovery phase so cursor, lock, transaction and relay boundaries
+ * stay explicit.
  */
+@Suppress("TooManyFunctions")
 class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private val definition: SyncDefinition<*, R, RID, KEY, SCOPE>,
     private val clock: Clock = Clock.systemUTC(),
@@ -46,156 +50,162 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
 
     override fun spawn(command: SpawnSyncCommand<SCOPE>): SyncReport {
         val startedAt = Instant.now(clock)
-        val context =
-            SyncContext(
-                runId = RunId.new(),
-                syncName = syncName,
-                correlationId = command.correlationId,
-                source = command.source,
-                scope = command.scope,
-                startedAt = startedAt,
-                dryRun = command.dryRun,
-            )
+        val context = context(command, startedAt)
 
         ports.observer.onRunStarted(context)
         ports.auditTrail.recordRunStarted(context)
 
         val pageSize = command.pageSize ?: definition.execution.pageSize
-
-        // Load cursor checkpoint; an explicit command cursor overrides the stored one.
         val checkpoint: CursorCheckpoint? = ports.checkpointStore.loadCursor(syncName, command.scope)
         val fromCursor: SyncCursor? = command.cursor ?: checkpoint?.cursor
-
-        // Fetch the page OUTSIDE the transaction.
-        val fetch = ports.remoteCatalog.fetchPage(command.scope, fromCursor, pageSize, context)
-        val pageView: PageView<R, RID, KEY> =
-            when (fetch) {
-                is RemoteFetch.Found -> PageView(fetch.value, partialFailure = null)
-                is RemoteFetch.Partial -> PageView(fetch.value, partialFailure = fetch.failure)
-                is RemoteFetch.Missing ->
-                    return finishSkipped(context, startedAt, "remote page missing (${fetch.reason})")
-                is RemoteFetch.Failed ->
-                    return finishFailed(context, startedAt, fetch.failure)
+        val report =
+            fetchPage(command, context, startedAt, fromCursor, pageSize).let { read ->
+                read.failureReport
+                    ?: executePage(command, context, startedAt, pageSize, checkpoint, requireNotNull(read.pageView))
             }
-        val page = pageView.page
+        return report
+    }
 
-        // Build enqueue effects from page changes.
-        val effects = mutableListOf<SyncEffect>()
-        page.changes.forEach { change ->
-            val externalId =
-                when (change) {
-                    is RemoteChange.Upsert<R, RID, KEY> -> change.remote.externalId
-                    is RemoteChange.Delete<RID> -> change.signal.remoteId
-                }
-            effects.add(
+    private fun context(
+        command: SpawnSyncCommand<SCOPE>,
+        startedAt: Instant,
+    ): SyncContext<SCOPE> =
+        SyncContext(
+            runId = RunId.new(),
+            syncName = syncName,
+            correlationId = command.correlationId,
+            source = command.source,
+            scope = command.scope,
+            startedAt = startedAt,
+            dryRun = command.dryRun,
+        )
+
+    private fun fetchPage(
+        command: SpawnSyncCommand<SCOPE>,
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+        fromCursor: SyncCursor?,
+        pageSize: Int,
+    ): SpawnPageRead<R, RID, KEY> =
+        when (val fetch = ports.remoteCatalog.fetchPage(command.scope, fromCursor, pageSize, context)) {
+            is RemoteFetch.Found -> SpawnPageRead(PageView(fetch.value, partialFailure = null))
+            is RemoteFetch.Partial -> SpawnPageRead(PageView(fetch.value, partialFailure = fetch.failure))
+            is RemoteFetch.Missing ->
+                SpawnPageRead(
+                    failureReport = finishSkipped(context, startedAt, "remote page missing (${fetch.reason})"),
+                )
+            is RemoteFetch.Failed -> SpawnPageRead(failureReport = finishFailed(context, startedAt, fetch.failure))
+        }
+
+    private fun executePage(
+        command: SpawnSyncCommand<SCOPE>,
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+        pageSize: Int,
+        checkpoint: CursorCheckpoint?,
+        pageView: PageView<R, RID, KEY>,
+    ): SyncReport {
+        val effects = enqueueEffects(pageView.page)
+        if (command.fullSync) {
+            appendUnseenLocalEffects(command, context, pageSize, pageView.page, effects)
+        }
+        return if (command.dryRun) {
+            finishDryRun(context, command, startedAt, effects.size, pageView)
+        } else {
+            persistPage(context, command, startedAt, checkpoint, pageView, effects)
+        }
+    }
+
+    private fun enqueueEffects(page: RemotePage<R, RID, KEY>): MutableList<SyncEffect> =
+        page.changes
+            .mapTo(mutableListOf()) { change ->
+                val externalId = externalIdOf(change)
                 SyncEffect.EnqueueEntitySync(
                     key = "enqueue:${syncName.value}:$externalId",
                     syncName = syncName,
                     externalId = externalId,
-                ),
-            )
-        }
-
-        // Full sync: also enqueue linked local remote ids not present on the page.
-        val seen: Set<String> = page.changes.map { change ->
-            when (change) {
-                is RemoteChange.Upsert<R, RID, KEY> -> change.remote.externalId.toString()
-                is RemoteChange.Delete<RID> -> change.signal.remoteId.toString()
+                )
             }
-        }.toSet()
 
-        if (command.fullSync) {
-            var localCursor: SyncCursor? = null
-            do {
-                val localPage = ports.localRepository.listLinkedRemoteIds(command.scope, localCursor, pageSize, context)
-                localPage.ids.forEach { rid ->
-                    if (rid.toString() !in seen) {
-                        effects.add(
-                            SyncEffect.EnqueueEntitySync(
-                                key = "enqueue:${syncName.value}:$rid",
-                                syncName = syncName,
-                                externalId = rid,
-                            ),
-                        )
-                    }
+    private fun appendUnseenLocalEffects(
+        command: SpawnSyncCommand<SCOPE>,
+        context: SyncContext<SCOPE>,
+        pageSize: Int,
+        page: RemotePage<R, RID, KEY>,
+        effects: MutableList<SyncEffect>,
+    ) {
+        val seen = page.changes.map { externalIdOf(it).toString() }.toSet()
+        var localCursor: SyncCursor? = null
+        do {
+            val localPage = ports.localRepository.listLinkedRemoteIds(command.scope, localCursor, pageSize, context)
+            localPage.ids
+                .filter { it.toString() !in seen }
+                .mapTo(effects) { rid ->
+                    SyncEffect.EnqueueEntitySync(
+                        key = "enqueue:${syncName.value}:$rid",
+                        syncName = syncName,
+                        externalId = rid,
+                    )
                 }
-                localCursor = localPage.nextCursor
-            } while (localCursor != null)
+            localCursor = localPage.nextCursor
+        } while (localCursor != null)
+    }
+
+    private fun externalIdOf(change: RemoteChange<R, RID, KEY>): RID =
+        when (change) {
+            is RemoteChange.Upsert<R, RID, KEY> -> change.remote.externalId
+            is RemoteChange.Delete<RID> -> change.signal.remoteId
         }
 
-        // Dry run: no effects, no cursor advance.
-        if (command.dryRun) {
-            val outcome = spawnOutcome(context, command, effects.size, startedAt, executed = false)
-            ports.observer.onOutcome(context, outcome)
-            val report = report(context, startedAt, listOf(outcome), requeueFor(pageView))
-            ports.observer.onRunCompleted(report)
-            ports.auditTrail.recordRunCompleted(report)
-            return report
-        }
+    private fun finishDryRun(
+        context: SyncContext<SCOPE>,
+        command: SpawnSyncCommand<SCOPE>,
+        startedAt: Instant,
+        enqueued: Int,
+        pageView: PageView<R, RID, KEY>,
+    ): SyncReport {
+        val outcome = spawnOutcome(context, command, enqueued, startedAt, executed = false)
+        ports.observer.onOutcome(context, outcome)
+        val report = report(context, startedAt, listOf(outcome), requeueFor(pageView))
+        ports.observer.onRunCompleted(report)
+        ports.auditTrail.recordRunCompleted(report)
+        return report
+    }
 
-        // Persist enqueue effects AND advance the cursor atomically.
+    private fun persistPage(
+        context: SyncContext<SCOPE>,
+        command: SpawnSyncCommand<SCOPE>,
+        startedAt: Instant,
+        checkpoint: CursorCheckpoint?,
+        pageView: PageView<R, RID, KEY>,
+        effects: List<SyncEffect>,
+    ): SyncReport {
         val nextCheckpoint =
             CursorCheckpoint(
                 syncName = syncName,
                 scope = command.scope,
-                cursor = page.nextCursor,
-                highWatermark = page.highWatermark ?: checkpoint?.highWatermark,
+                cursor = pageView.page.nextCursor,
+                highWatermark = pageView.page.highWatermark ?: checkpoint?.highWatermark,
                 updatedAt = Instant.now(clock),
                 runId = context.runId,
             )
-
         val lockKey = SyncLockKey("${syncName.value}:spawn:${command.scope}")
         val lockResult =
             ports.lockManager.withLock(lockKey, definition.execution.lockTimeout) {
-                ports.unitOfWork.transaction {
-                    if (effects.isNotEmpty()) {
-                        ports.effectOutbox.append(context, effects)
-                    }
-                    // Advance cursor only after enqueue effects are appended (same tx -> durable together).
-                    // Partial pages do not advance the cursor (we must re-fetch the same window).
-                    val advanced =
-                        if (pageView.partialFailure == null) {
-                            ports.checkpointStore.saveCursorIfCurrent(checkpoint, nextCheckpoint)
-                        } else {
-                            false
-                        }
-                    val outcome = spawnOutcome(context, command, effects.size, startedAt, executed = true, advanced = advanced)
-                    ports.auditTrail.recordOutcome(context, outcome)
-                    ports.observer.onOutcome(context, outcome)
-                    if (effects.isNotEmpty()) {
-                        afterCommit { ports.effectOutbox.requestRelay(context) }
-                    }
-                    SpawnTxResult(outcome, advanced)
-                }
+                runTransaction(context, command, startedAt, checkpoint, nextCheckpoint, pageView, effects)
             }
-
         val txResult =
             when (lockResult) {
                 is LockResult.Acquired -> lockResult.value
-                is LockResult.NotAcquired -> {
-                    val outcome =
-                        SyncOutcome.Failed<RID>(
-                            subject = scopeSubject(context),
-                            action = null,
-                            duration = Duration.between(startedAt, Instant.now(clock)),
-                            failure =
-                                SyncFailure(
-                                    kind = SyncFailureKind.LOCK_UNAVAILABLE,
-                                    message = "could not acquire spawn lock $lockKey",
-                                    retryable = true,
-                                    retryAfter = definition.execution.lockTimeout,
-                                ),
-                        )
-                    SpawnTxResult(outcome, advanced = false)
-                }
+                is LockResult.NotAcquired -> SpawnTxResult(lockUnavailableOutcome(context, startedAt, lockKey))
             }
-
         val requeue =
             when {
-                txResult.outcome is SyncOutcome.Failed -> RequeueDecision.Later(
-                    definition.execution.lockTimeout,
-                    "spawn could not progress",
-                )
+                txResult.outcome is SyncOutcome.Failed ->
+                    RequeueDecision.Later(
+                        definition.execution.lockTimeout,
+                        "spawn could not progress",
+                    )
                 else -> requeueFor(pageView)
             }
         val report = report(context, startedAt, listOf(txResult.outcome), requeue)
@@ -203,6 +213,49 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         ports.auditTrail.recordRunCompleted(report)
         return report
     }
+
+    private fun runTransaction(
+        context: SyncContext<SCOPE>,
+        command: SpawnSyncCommand<SCOPE>,
+        startedAt: Instant,
+        checkpoint: CursorCheckpoint?,
+        nextCheckpoint: CursorCheckpoint,
+        pageView: PageView<R, RID, KEY>,
+        effects: List<SyncEffect>,
+    ): SpawnTxResult<RID> =
+        ports.unitOfWork.transaction {
+            if (effects.isNotEmpty()) {
+                ports.effectOutbox.append(context, effects)
+            }
+            val advanced =
+                pageView.partialFailure == null &&
+                    ports.checkpointStore.saveCursorIfCurrent(checkpoint, nextCheckpoint)
+            val outcome = spawnOutcome(context, command, effects.size, startedAt, executed = true, advanced = advanced)
+            ports.auditTrail.recordOutcome(context, outcome)
+            ports.observer.onOutcome(context, outcome)
+            if (effects.isNotEmpty()) {
+                afterCommit { ports.effectOutbox.requestRelay(context) }
+            }
+            SpawnTxResult(outcome, advanced)
+        }
+
+    private fun lockUnavailableOutcome(
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+        lockKey: SyncLockKey,
+    ): SyncOutcome<RID> =
+        SyncOutcome.Failed(
+            subject = scopeSubject(context),
+            action = null,
+            duration = Duration.between(startedAt, Instant.now(clock)),
+            failure =
+                SyncFailure(
+                    kind = SyncFailureKind.LOCK_UNAVAILABLE,
+                    message = "could not acquire spawn lock $lockKey",
+                    retryable = true,
+                    retryAfter = definition.execution.lockTimeout,
+                ),
+        )
 
     private fun requeueFor(pageView: PageView<R, RID, KEY>): RequeueDecision {
         val page = pageView.page
@@ -234,13 +287,18 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             subject = scopeSubject(context),
             action = action,
             duration = Duration.between(startedAt, Instant.now(clock)),
-            reason = com.jorisjonkers.personalstack.common.sync.domain.SyncReason.Policy(
-                "spawn enqueued=$enqueued executed=$executed cursorAdvanced=$advanced fullSync=${command.fullSync}",
-            ),
+            reason =
+                com.jorisjonkers.personalstack.common.sync.domain.SyncReason.Policy(
+                    "spawn enqueued=$enqueued executed=$executed cursorAdvanced=$advanced fullSync=${command.fullSync}",
+                ),
         )
     }
 
-    private fun finishFailed(context: SyncContext<SCOPE>, startedAt: Instant, failure: SyncFailure): SyncReport {
+    private fun finishFailed(
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+        failure: SyncFailure,
+    ): SyncReport {
         val outcome =
             SyncOutcome.Failed<RID>(
                 subject = scopeSubject(context),
@@ -261,13 +319,19 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         return report
     }
 
-    private fun finishSkipped(context: SyncContext<SCOPE>, startedAt: Instant, message: String): SyncReport {
+    private fun finishSkipped(
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+        message: String,
+    ): SyncReport {
         val outcome =
             SyncOutcome.Skipped<RID>(
                 subject = scopeSubject(context),
                 action = null,
                 duration = Duration.between(startedAt, Instant.now(clock)),
-                reason = com.jorisjonkers.personalstack.common.sync.domain.SyncReason.Policy(message),
+                reason =
+                    com.jorisjonkers.personalstack.common.sync.domain.SyncReason
+                        .Policy(message),
             )
         ports.observer.onOutcome(context, outcome)
         val report = report(context, startedAt, listOf(outcome), RequeueDecision.Done)
@@ -279,7 +343,10 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private fun scopeSubject(context: SyncContext<SCOPE>?): SyncSubject<RID> {
         val scope = context?.scope
         return if (scope != null) {
-            SyncSubject.Scope(com.jorisjonkers.personalstack.common.sync.domain.ScopeId(scope.toString()))
+            SyncSubject.Scope(
+                com.jorisjonkers.personalstack.common.sync.domain
+                    .ScopeId(scope.toString()),
+            )
         } else {
             SyncSubject.Unknown
         }
@@ -305,9 +372,14 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         val partialFailure: SyncFailure?,
     )
 
+    private data class SpawnPageRead<R : Any, RID : Any, KEY : Any>(
+        val pageView: PageView<R, RID, KEY>? = null,
+        val failureReport: SyncReport? = null,
+    )
+
     private data class SpawnTxResult<RID : Any>(
         val outcome: SyncOutcome<RID>,
-        val advanced: Boolean,
+        val advanced: Boolean = false,
     )
 
     companion object {

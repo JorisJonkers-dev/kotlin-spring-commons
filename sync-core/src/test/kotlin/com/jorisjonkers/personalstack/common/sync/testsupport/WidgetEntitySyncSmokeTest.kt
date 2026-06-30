@@ -5,8 +5,8 @@ import com.jorisjonkers.personalstack.common.sync.application.service.SyncUseCas
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecord
 import com.jorisjonkers.personalstack.common.sync.domain.SyncAction
 import com.jorisjonkers.personalstack.common.sync.domain.SyncOutcome
-import com.jorisjonkers.personalstack.common.sync.domain.SyncReportStatus
 import com.jorisjonkers.personalstack.common.sync.domain.SyncRegistrationLifecycle
+import com.jorisjonkers.personalstack.common.sync.domain.SyncReportStatus
 import com.jorisjonkers.personalstack.common.sync.domain.SyncTriggerSource
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

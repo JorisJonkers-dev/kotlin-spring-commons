@@ -14,27 +14,27 @@ import com.jorisjonkers.personalstack.common.sync.domain.RemotePage
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecord
 import com.jorisjonkers.personalstack.common.sync.domain.RequeueDecision
 import com.jorisjonkers.personalstack.common.sync.domain.SyncAction
+import com.jorisjonkers.personalstack.common.sync.domain.SyncDefinition
+import com.jorisjonkers.personalstack.common.sync.domain.SyncExecutionOptions
 import com.jorisjonkers.personalstack.common.sync.domain.SyncFailure
 import com.jorisjonkers.personalstack.common.sync.domain.SyncFailureKind
 import com.jorisjonkers.personalstack.common.sync.domain.SyncName
 import com.jorisjonkers.personalstack.common.sync.domain.SyncOutcome
-import com.jorisjonkers.personalstack.common.sync.domain.SyncDefinition
-import com.jorisjonkers.personalstack.common.sync.domain.SyncExecutionOptions
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReport
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReportStatus
 import com.jorisjonkers.personalstack.common.sync.domain.SyncSubject
 import com.jorisjonkers.personalstack.common.sync.domain.SyncTriggerSource
+import com.jorisjonkers.personalstack.common.sync.testsupport.RemoteWidget
+import com.jorisjonkers.personalstack.common.sync.testsupport.SyncFixtures
 import com.jorisjonkers.personalstack.common.sync.testsupport.Widget
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarness
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetId
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import com.jorisjonkers.personalstack.common.sync.testsupport.RemoteWidget
-import com.jorisjonkers.personalstack.common.sync.testsupport.SyncFixtures
-import java.time.Duration
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.time.Instant
 
 class CoverageGapTest {
     @Test
@@ -151,7 +151,11 @@ class CoverageGapTest {
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes).hasSize(1)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.IMPORT)
-        assertThat(harness.repository.saved.single().registration.remoteId).isEqualTo(WidgetId("remote-upsert"))
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.remoteId,
+        ).isEqualTo(WidgetId("remote-upsert"))
     }
 
     @Test
@@ -161,7 +165,9 @@ class CoverageGapTest {
         val id = WidgetId("list-equal-else")
         harness.repository.seed(Widget.linked("local-list-equal", id, "SKU-LIST-EQUAL", "Same", scope))
         harness.remoteCatalog.onFetchForScope(
-            RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord(id.value, sku = "SKU-LIST-EQUAL", name = "Same"))))),
+            RemoteFetch.Found(
+                remotePage(listOf(upsert(remoteRecord(id.value, sku = "SKU-LIST-EQUAL", name = "Same")))),
+            ),
         )
 
         val report =
@@ -190,7 +196,8 @@ class CoverageGapTest {
         val outcome = report.outcomes.single() as SyncOutcome.Skipped<*>
         assertThat(outcome.subject).isEqualTo(
             SyncSubject.Scope(
-                com.jorisjonkers.personalstack.common.sync.domain.ScopeId(scope.toString()),
+                com.jorisjonkers.personalstack.common.sync.domain
+                    .ScopeId(scope.toString()),
             ),
         )
     }
@@ -208,16 +215,15 @@ class CoverageGapTest {
         assertThat(sameCopy).isEqualTo(definition)
         assertThat(sameCopy.hashCode()).isEqualTo(definition.hashCode())
         assertThat(definition.toString()).contains("SyncDefinition")
-        val (name, localProjector, remoteProjector, differ, mapper, matchPlan, policies, execution, ports) = definition
-        assertThat(name).isEqualTo(definition.name)
-        assertThat(localProjector).isSameAs(definition.localProjector)
-        assertThat(remoteProjector).isSameAs(definition.remoteProjector)
-        assertThat(differ).isSameAs(definition.differ)
-        assertThat(mapper).isSameAs(definition.mapper)
-        assertThat(matchPlan).isEqualTo(definition.matchPlan)
-        assertThat(policies).isEqualTo(definition.policies)
-        assertThat(execution).isEqualTo(definition.execution)
-        assertThat(ports).isEqualTo(definition.ports)
+        assertThat(definition.component1()).isEqualTo(definition.name)
+        assertThat(definition.component2()).isSameAs(definition.localProjector)
+        assertThat(definition.component3()).isSameAs(definition.remoteProjector)
+        assertThat(definition.component4()).isSameAs(definition.differ)
+        assertThat(definition.component5()).isSameAs(definition.mapper)
+        assertThat(definition.component6()).isEqualTo(definition.matchPlan)
+        assertThat(definition.component7()).isEqualTo(definition.policies)
+        assertThat(definition.component8()).isEqualTo(definition.execution)
+        assertThat(definition.component9()).isEqualTo(definition.ports)
 
         // Construct without `execution` to exercise the default-parameter constructor.
         val viaDefaultExecution =
@@ -301,8 +307,9 @@ class CoverageGapTest {
         ): RemotePage<RemoteWidget, WidgetId, WidgetKey> =
             RemotePage(changes = changes, nextCursor = null, highWatermark = null)
 
-        fun upsert(record: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
-            RemoteChange.Upsert(record)
+        fun upsert(
+            record: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>,
+        ): RemoteChange<RemoteWidget, WidgetId, WidgetKey> = RemoteChange.Upsert(record)
 
         fun deleteChange(id: String): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
             RemoteChange.Delete(
@@ -310,7 +317,9 @@ class CoverageGapTest {
                 version = null,
             )
 
-        fun failure(kind: SyncFailureKind, retryable: Boolean): SyncFailure =
-            SyncFailure(kind = kind, message = kind.name, retryable = retryable)
+        fun failure(
+            kind: SyncFailureKind,
+            retryable: Boolean,
+        ): SyncFailure = SyncFailure(kind = kind, message = kind.name, retryable = retryable)
     }
 }

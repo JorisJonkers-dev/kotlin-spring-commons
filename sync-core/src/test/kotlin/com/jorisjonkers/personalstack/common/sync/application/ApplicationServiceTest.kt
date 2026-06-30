@@ -38,6 +38,7 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncSubject
 import com.jorisjonkers.personalstack.common.sync.domain.SyncTriggerSource
 import com.jorisjonkers.personalstack.common.sync.domain.UnlinkReason
 import com.jorisjonkers.personalstack.common.sync.domain.VersionStamp
+import com.jorisjonkers.personalstack.common.sync.testsupport.RemoteWidget
 import com.jorisjonkers.personalstack.common.sync.testsupport.SyncFixtures
 import com.jorisjonkers.personalstack.common.sync.testsupport.Widget
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarness
@@ -46,23 +47,23 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetMapper
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetMatchPass
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import com.jorisjonkers.personalstack.common.sync.testsupport.RemoteWidget
-import java.time.Duration
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.time.Instant
 
+// Structural threshold: this suite keeps application-service scenarios together to share the sync harness.
+@Suppress("LargeClass")
 class ApplicationServiceTest {
     @Test
     fun `entity command covers defaults and generated members`() {
         val command = SyncEntityCommand(externalId = WidgetId("entity-default"), source = SyncTriggerSource.TEST)
-        val (externalId, source, correlationId, idempotencyKey, dryRun) = command
 
-        assertThat(externalId).isEqualTo(WidgetId("entity-default"))
-        assertThat(source).isEqualTo(SyncTriggerSource.TEST)
-        assertThat(correlationId.value).isNotBlank()
-        assertThat(idempotencyKey).isNull()
-        assertThat(dryRun).isFalse()
+        assertThat(command.component1()).isEqualTo(WidgetId("entity-default"))
+        assertThat(command.component2()).isEqualTo(SyncTriggerSource.TEST)
+        assertThat(command.component3().value).isNotBlank()
+        assertThat(command.component4()).isNull()
+        assertThat(command.component5()).isFalse()
 
         val copy = command.copy(dryRun = true)
         assertThat(command.copy()).isEqualTo(command)
@@ -76,13 +77,12 @@ class ApplicationServiceTest {
     fun `list command covers defaults and generated members`() {
         val scope = WidgetScope("list-default")
         val command = SyncListCommand(scope = scope, source = SyncTriggerSource.TEST)
-        val (actualScope, source, correlationId, idempotencyKey, dryRun) = command
 
-        assertThat(actualScope).isEqualTo(scope)
-        assertThat(source).isEqualTo(SyncTriggerSource.TEST)
-        assertThat(correlationId.value).isNotBlank()
-        assertThat(idempotencyKey).isNull()
-        assertThat(dryRun).isFalse()
+        assertThat(command.component1()).isEqualTo(scope)
+        assertThat(command.component2()).isEqualTo(SyncTriggerSource.TEST)
+        assertThat(command.component3().value).isNotBlank()
+        assertThat(command.component4()).isNull()
+        assertThat(command.component5()).isFalse()
 
         val copy = command.copy(dryRun = true)
         assertThat(command.copy()).isEqualTo(command)
@@ -95,16 +95,15 @@ class ApplicationServiceTest {
     @Test
     fun `spawn command covers defaults and generated members`() {
         val command = SpawnSyncCommand<WidgetScope>(scope = null, source = SyncTriggerSource.TEST)
-        val (scope, cursor, pageSize, fullSync, source, correlationId, idempotencyKey, dryRun) = command
 
-        assertThat(scope).isNull()
-        assertThat(cursor).isNull()
-        assertThat(pageSize).isNull()
-        assertThat(fullSync).isFalse()
-        assertThat(source).isEqualTo(SyncTriggerSource.TEST)
-        assertThat(correlationId.value).isNotBlank()
-        assertThat(idempotencyKey).isNull()
-        assertThat(dryRun).isFalse()
+        assertThat(command.component1()).isNull()
+        assertThat(command.component2()).isNull()
+        assertThat(command.component3()).isNull()
+        assertThat(command.component4()).isFalse()
+        assertThat(command.component5()).isEqualTo(SyncTriggerSource.TEST)
+        assertThat(command.component6().value).isNotBlank()
+        assertThat(command.component7()).isNull()
+        assertThat(command.component8()).isFalse()
 
         val copy = command.copy(cursor = SyncCursor("explicit"), pageSize = 25, fullSync = true)
         assertThat(command.copy()).isEqualTo(command)
@@ -324,7 +323,11 @@ class ApplicationServiceTest {
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.requeue).isEqualTo(RequeueDecision.Done)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.UPDATE)
-        assertThat(harness.repository.saved.single().name).isEqualTo("New")
+        assertThat(
+            harness.repository.saved
+                .single()
+                .name,
+        ).isEqualTo("New")
         assertThat(harness.checkpointStore.savedBaselines).hasSize(1)
     }
 
@@ -342,9 +345,16 @@ class ApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.DELETE)
-        assertThat(harness.repository.saved.single().deleted).isTrue()
-        assertThat(harness.repository.saved.single().registration.lifecycle)
-            .isEqualTo(SyncRegistrationLifecycle.REMOTELY_DELETED)
+        assertThat(
+            harness.repository.saved
+                .single()
+                .deleted,
+        ).isTrue()
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.lifecycle,
+        ).isEqualTo(SyncRegistrationLifecycle.REMOTELY_DELETED)
         assertThat(harness.checkpointStore.savedBaselines).isEmpty()
     }
 
@@ -362,7 +372,11 @@ class ApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.UNLINK)
-        assertThat(harness.repository.saved.single().registration.lifecycle).isEqualTo(SyncRegistrationLifecycle.UNLINKED)
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.lifecycle,
+        ).isEqualTo(SyncRegistrationLifecycle.UNLINKED)
         assertThat(harness.checkpointStore.savedBaselines).isEmpty()
     }
 
@@ -380,7 +394,11 @@ class ApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.UPDATE)
-        assertThat(harness.repository.saved.single().name).isEqualTo("New")
+        assertThat(
+            harness.repository.saved
+                .single()
+                .name,
+        ).isEqualTo("New")
         assertThat(harness.checkpointStore.savedBaselines).hasSize(1)
     }
 
@@ -417,8 +435,16 @@ class ApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.RESTORE)
-        assertThat(harness.repository.saved.single().deleted).isFalse()
-        assertThat(harness.repository.saved.single().registration.lifecycle).isEqualTo(SyncRegistrationLifecycle.LINKED)
+        assertThat(
+            harness.repository.saved
+                .single()
+                .deleted,
+        ).isFalse()
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.lifecycle,
+        ).isEqualTo(SyncRegistrationLifecycle.LINKED)
         assertThat(harness.checkpointStore.savedBaselines).hasSize(1)
     }
 
@@ -436,7 +462,11 @@ class ApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.RELINK)
-        assertThat(harness.repository.saved.single().registration.remoteId).isEqualTo(id)
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.remoteId,
+        ).isEqualTo(id)
         assertThat(harness.checkpointStore.savedBaselines).hasSize(1)
     }
 
@@ -463,8 +493,16 @@ class ApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.DELETE)
-        assertThat(harness.repository.saved.single().deleted).isTrue()
-        assertThat(harness.repository.saved.single().registration.version).isEqualTo(VersionStamp.Token("deleted-v1"))
+        assertThat(
+            harness.repository.saved
+                .single()
+                .deleted,
+        ).isTrue()
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.version,
+        ).isEqualTo(VersionStamp.Token("deleted-v1"))
     }
 
     @Test
@@ -508,6 +546,8 @@ class ApplicationServiceTest {
     }
 
     @Test
+    // Structural threshold: one scenario deliberately exercises every list decision branch in order.
+    @Suppress("LongMethod")
     fun `list per record executes import update equal restore relink and delete decisions`() {
         val scope = WidgetScope("list-decisions")
         val harness = WidgetHarness.build(listTransactionMode = ListTransactionMode.PER_RECORD)
@@ -562,10 +602,19 @@ class ApplicationServiceTest {
                 SyncAction.DELETE,
             )
         assertThat(report.outcomes.filterIsInstance<SyncOutcome.Succeeded<*>>()).hasSize(5)
-        assertThat(report.outcomes.filterIsInstance<SyncOutcome.Skipped<*>>().single().action).isEqualTo(SyncAction.EQUAL)
+        assertThat(
+            report.outcomes
+                .filterIsInstance<SyncOutcome.Skipped<*>>()
+                .single()
+                .action,
+        ).isEqualTo(SyncAction.EQUAL)
         assertThat(harness.repository.saved).hasSize(5)
         assertThat(harness.checkpointStore.savedBaselines).hasSize(4)
-        assertThat(harness.repository.rows.single { it.registration.rememberedRemoteId == deleteId }.deleted).isTrue()
+        assertThat(
+            harness.repository.rows
+                .single { it.registration.rememberedRemoteId == deleteId }
+                .deleted,
+        ).isTrue()
         assertThat(harness.unitOfWork.transactionCount).isEqualTo(7)
     }
 
@@ -612,7 +661,11 @@ class ApplicationServiceTest {
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes).hasSize(1)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.IMPORT)
-        assertThat(harness.repository.saved.single().registration.remoteId).isEqualTo(WidgetId("partial-present"))
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.remoteId,
+        ).isEqualTo(WidgetId("partial-present"))
         assertThat(later(report).reason).isEqualTo("partial remote page")
     }
 
@@ -675,7 +728,11 @@ class ApplicationServiceTest {
         assertThat(report.outcomes.filterIsInstance<SyncOutcome.Succeeded<*>>()).hasSize(1)
         assertThat(failure.failure.kind).isEqualTo(SyncFailureKind.LOCAL_VALIDATION_FAILED)
         assertThat(failure.failure.causeClass).isEqualTo(IllegalStateException::class.java.name)
-        assertThat(harness.repository.saved.single().registration.remoteId).isEqualTo(okId)
+        assertThat(
+            harness.repository.saved
+                .single()
+                .registration.remoteId,
+        ).isEqualTo(okId)
         assertThat(harness.checkpointStore.savedBaselines).hasSize(1)
     }
 
@@ -752,7 +809,9 @@ class ApplicationServiceTest {
         val local = Widget.linked("local-failed-scope", WidgetId("scope-local"), "SKU", "Local", scope)
         harness.repository.seed(local)
         harness.remoteCatalog.onFetchForScope(
-            RemoteFetch.Failed(failure(SyncFailureKind.REMOTE_TIMEOUT, retryable = true, retryAfter = Duration.ofSeconds(8))),
+            RemoteFetch.Failed(
+                failure(SyncFailureKind.REMOTE_TIMEOUT, retryable = true, retryAfter = Duration.ofSeconds(8)),
+            ),
         )
 
         val report =
@@ -810,7 +869,9 @@ class ApplicationServiceTest {
                 missingRemotePolicy = retryMissingPolicy(retryAfter),
                 listTransactionMode = ListTransactionMode.PER_RECORD,
             )
-        harness.repository.seed(Widget.linked("local-list-retry", WidgetId("list-retry-id"), "SKU-RETRY", "Local", scope))
+        harness.repository.seed(
+            Widget.linked("local-list-retry", WidgetId("list-retry-id"), "SKU-RETRY", "Local", scope),
+        )
         harness.remoteCatalog.onFetchForScope(RemoteFetch.Found(remotePage()))
 
         val report =
@@ -886,8 +947,16 @@ class ApplicationServiceTest {
         assertThat(enqueuedIds(harness.effectOutbox.appended))
             .containsExactly(WidgetId("spawn-upsert"), WidgetId("spawn-delete"))
         assertThat(harness.checkpointStore.casCalls).hasSize(1)
-        assertThat(harness.checkpointStore.casCalls.single().cursor).isEqualTo(SyncCursor("next"))
-        assertThat(harness.checkpointStore.casCalls.single().highWatermark).isEqualTo(SyncCursor("old-high"))
+        assertThat(
+            harness.checkpointStore.casCalls
+                .single()
+                .cursor,
+        ).isEqualTo(SyncCursor("next"))
+        assertThat(
+            harness.checkpointStore.casCalls
+                .single()
+                .highWatermark,
+        ).isEqualTo(SyncCursor("old-high"))
         assertThat(harness.unitOfWork.transactionCount).isEqualTo(1)
         assertThat(harness.unitOfWork.afterCommitRun).isEqualTo(1)
         assertThat(harness.effectOutbox.relayRequests).isEqualTo(1)
@@ -1029,7 +1098,9 @@ class ApplicationServiceTest {
         val scope = WidgetScope("spawn-failed")
         val harness = WidgetHarness.build()
         harness.remoteCatalog.enqueuePage(
-            RemoteFetch.Failed(failure(SyncFailureKind.CIRCUIT_OPEN, retryable = true, retryAfter = Duration.ofSeconds(4))),
+            RemoteFetch.Failed(
+                failure(SyncFailureKind.CIRCUIT_OPEN, retryable = true, retryAfter = Duration.ofSeconds(4)),
+            ),
         )
 
         val report =
@@ -1095,8 +1166,10 @@ class ApplicationServiceTest {
     private class FailingUpdateMapper(
         private val failedId: WidgetId,
     ) : SyncMapper<Widget, RemoteWidget, WidgetScope> {
-        override fun create(remote: RemoteWidget, context: SyncContext<WidgetScope>): Widget =
-            WidgetMapper.create(remote, context)
+        override fun create(
+            remote: RemoteWidget,
+            context: SyncContext<WidgetScope>,
+        ): Widget = WidgetMapper.create(remote, context)
 
         override fun update(
             local: Widget,
@@ -1124,17 +1197,24 @@ class ApplicationServiceTest {
             context: SyncContext<WidgetScope>,
         ): Widget = WidgetMapper.relink(local, remote, changes, context)
 
-        override fun delete(local: Widget, signal: RemoteDeleteSignal<*>, context: SyncContext<WidgetScope>): Widget =
-            WidgetMapper.delete(local, signal, context)
+        override fun delete(
+            local: Widget,
+            signal: RemoteDeleteSignal<*>,
+            context: SyncContext<WidgetScope>,
+        ): Widget = WidgetMapper.delete(local, signal, context)
 
-        override fun unlink(local: Widget, reason: UnlinkReason, context: SyncContext<WidgetScope>): Widget =
-            WidgetMapper.unlink(local, reason, context)
+        override fun unlink(
+            local: Widget,
+            reason: UnlinkReason,
+            context: SyncContext<WidgetScope>,
+        ): Widget = WidgetMapper.unlink(local, reason, context)
     }
 
     private companion object {
         val FIXED: Instant = Instant.parse("2026-06-30T00:00:00Z")
 
-        // Private service data classes cannot be directly instantiated; their generated members are only reachable through service execution.
+        // Private service data classes cannot be directly instantiated; their generated members are
+        // only reachable through service execution.
         // SyncEntityService.finalizeIdempotency's failed+partial path is unreachable with one entity outcome.
 
         fun remoteRecord(
@@ -1181,8 +1261,9 @@ class ApplicationServiceTest {
                 retryAfter = retryAfter,
             )
 
-        fun upsert(record: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
-            RemoteChange.Upsert(record)
+        fun upsert(
+            record: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>,
+        ): RemoteChange<RemoteWidget, WidgetId, WidgetKey> = RemoteChange.Upsert(record)
 
         fun deleteChange(id: String): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
             RemoteChange.Delete(
@@ -1211,8 +1292,7 @@ class ApplicationServiceTest {
             retryable: Boolean,
             retryAfter: Duration? = null,
             message: String = kind.name,
-        ): SyncFailure =
-            SyncFailure(kind = kind, message = message, retryable = retryable, retryAfter = retryAfter)
+        ): SyncFailure = SyncFailure(kind = kind, message = message, retryable = retryable, retryAfter = retryAfter)
 
         fun retryMissingPolicy(retryAfter: Duration): MissingRemotePolicy<Widget, WidgetId, WidgetKey> =
             MissingRemotePolicy { local, _ ->
@@ -1257,14 +1337,21 @@ class ApplicationServiceTest {
                 outcomes = emptyList(),
             )
 
-        fun succeeded(action: SyncAction, id: String): SyncOutcome.Succeeded<WidgetId> =
+        fun succeeded(
+            action: SyncAction,
+            id: String,
+        ): SyncOutcome.Succeeded<WidgetId> =
             SyncOutcome.Succeeded(
                 subject = SyncSubject.Remote(WidgetId(id)),
                 action = action,
                 duration = Duration.ZERO,
             )
 
-        fun failed(action: SyncAction, retryable: Boolean, id: String): SyncOutcome.Failed<WidgetId> =
+        fun failed(
+            action: SyncAction,
+            retryable: Boolean,
+            id: String,
+        ): SyncOutcome.Failed<WidgetId> =
             SyncOutcome.Failed(
                 subject = SyncSubject.Remote(WidgetId(id)),
                 action = action,
@@ -1272,11 +1359,9 @@ class ApplicationServiceTest {
                 failure = failure(SyncFailureKind.UNKNOWN, retryable = retryable),
             )
 
-        fun later(report: SyncReport): RequeueDecision.Later =
-            report.requeue as RequeueDecision.Later
+        fun later(report: SyncReport): RequeueDecision.Later = report.requeue as RequeueDecision.Later
 
-        fun policyMessage(outcome: SyncOutcome.Skipped<*>): String =
-            (outcome.reason as SyncReason.Policy).message
+        fun policyMessage(outcome: SyncOutcome.Skipped<*>): String = (outcome.reason as SyncReason.Policy).message
 
         fun enqueuedIds(effects: List<SyncEffect>): List<Any?> =
             effects.filterIsInstance<SyncEffect.EnqueueEntitySync<*>>().map { it.externalId }

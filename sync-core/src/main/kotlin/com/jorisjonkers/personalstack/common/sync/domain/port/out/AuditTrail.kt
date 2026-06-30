@@ -14,7 +14,10 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncReport
 interface AuditTrail {
     fun recordRunStarted(context: SyncContext<*>)
 
-    fun recordOutcome(context: SyncContext<*>, outcome: SyncOutcome<*>)
+    fun recordOutcome(
+        context: SyncContext<*>,
+        outcome: SyncOutcome<*>,
+    )
 
     fun recordRunCompleted(report: SyncReport)
 }

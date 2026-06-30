@@ -19,7 +19,11 @@ data class SyncRegistration<RID : Any>(
     val version: VersionStamp?,
 ) {
     /** Establish an active link to a remote record (fresh link or import). */
-    fun link(remoteId: RID, version: VersionStamp?, at: Instant): SyncRegistration<RID> =
+    fun link(
+        remoteId: RID,
+        version: VersionStamp?,
+        at: Instant,
+    ): SyncRegistration<RID> =
         copy(
             remoteId = remoteId,
             rememberedRemoteId = remoteId,
@@ -29,7 +33,11 @@ data class SyncRegistration<RID : Any>(
         )
 
     /** Bring a remotely-deleted record back to life under its previous (remembered) remote id. */
-    fun restore(remoteId: RID, version: VersionStamp?, at: Instant): SyncRegistration<RID> =
+    fun restore(
+        remoteId: RID,
+        version: VersionStamp?,
+        at: Instant,
+    ): SyncRegistration<RID> =
         copy(
             remoteId = remoteId,
             rememberedRemoteId = remoteId,
@@ -39,7 +47,11 @@ data class SyncRegistration<RID : Any>(
         )
 
     /** Re-attach a local record to a remote record discovered by a soft (natural-key) match. */
-    fun relink(remoteId: RID, version: VersionStamp?, at: Instant): SyncRegistration<RID> =
+    fun relink(
+        remoteId: RID,
+        version: VersionStamp?,
+        at: Instant,
+    ): SyncRegistration<RID> =
         copy(
             remoteId = remoteId,
             rememberedRemoteId = remoteId,
@@ -49,19 +61,28 @@ data class SyncRegistration<RID : Any>(
         )
 
     /** Record that the remote side reports this record as deleted; the link id is remembered. */
-    fun markRemoteDeleted(signal: RemoteDeleteSignal<RID>, at: Instant): SyncRegistration<RID> =
+    fun markRemoteDeleted(
+        signal: RemoteDeleteSignal<RID>,
+        at: Instant,
+    ): SyncRegistration<RID> =
         copy(
             remoteId = null,
             rememberedRemoteId = signal.remoteId,
             lifecycle = SyncRegistrationLifecycle.REMOTELY_DELETED,
             changedAt = at,
-            version = (signal as? RemoteDeleteSignal.ExplicitDelete<RID>)?.version
-                ?: (signal as? RemoteDeleteSignal.Tombstone<RID>)?.version
-                ?: version,
+            version =
+                (signal as? RemoteDeleteSignal.ExplicitDelete<RID>)?.version
+                    ?: (signal as? RemoteDeleteSignal.Tombstone<RID>)?.version
+                    ?: version,
         )
 
     /** Drop the active link while remembering the remote id, recording why. */
-    fun unlink(reason: UnlinkReason, at: Instant): SyncRegistration<RID> =
+    fun unlink(
+        // Reason is carried by the decision/audit trail; registration stores only lifecycle state.
+        @Suppress("UnusedParameter")
+        reason: UnlinkReason,
+        at: Instant,
+    ): SyncRegistration<RID> =
         copy(
             remoteId = null,
             rememberedRemoteId = rememberedRemoteId ?: remoteId,
@@ -139,6 +160,10 @@ sealed interface RemoteDeleteSignal<out RID : Any> {
 /** Why a local record was unlinked from its remote counterpart. */
 sealed interface UnlinkReason {
     data object ManualDetach : UnlinkReason
+
     data object ReplacedByRelink : UnlinkReason
-    data class Policy(val message: String) : UnlinkReason
+
+    data class Policy(
+        val message: String,
+    ) : UnlinkReason
 }

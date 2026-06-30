@@ -6,9 +6,9 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarness
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetId
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 /**
  * Covers the additive ergonomic layer: ports() bag wiring, projection() objects, the declarative
@@ -78,17 +78,18 @@ class ErgonomicDslTest {
     @Test
     fun `matching verbs derive the expected passes and compose with raw pass`() {
         val plan =
-            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>().apply {
-                remoteId(WidgetKey::Remote)
-                rememberedRemoteId(WidgetKey::Remote)
-                natural(WidgetKey.Sku::class.java, "sku")
-                natural(WidgetKey.Sku::class.java, "sku-by-class")
-                pass(
-                    name = "raw",
-                    localKeys = { emptySet() },
-                    remoteKeys = { emptySet() },
-                )
-            }.build()
+            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>()
+                .apply {
+                    remoteId(WidgetKey::Remote)
+                    rememberedRemoteId(WidgetKey::Remote)
+                    natural(WidgetKey.Sku::class.java, "sku")
+                    natural(WidgetKey.Sku::class.java, "sku-by-class")
+                    pass(
+                        name = "raw",
+                        localKeys = { emptySet() },
+                        remoteKeys = { emptySet() },
+                    )
+                }.build()
 
         assertThat(plan.passes.map { it.name })
             .containsExactly("remote-id", "remembered-remote-id", "sku", "sku-by-class", "raw")
@@ -127,10 +128,11 @@ class ErgonomicDslTest {
     @Test
     fun `remote and remembered id passes yield no keys when the registration ids are absent`() {
         val plan =
-            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>().apply {
-                remoteId(WidgetKey::Remote)
-                rememberedRemoteId(WidgetKey::Remote)
-            }.build()
+            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>()
+                .apply {
+                    remoteId(WidgetKey::Remote)
+                    rememberedRemoteId(WidgetKey::Remote)
+                }.build()
         val unlinked =
             localRecord<Widget, WidgetId, WidgetKey>(
                 aggregate = Widget.neverLinked("l1", "SKU1", "n"),
@@ -145,9 +147,10 @@ class ErgonomicDslTest {
     @Test
     fun `natural verb defaults the pass name to the key class simple name`() {
         val plan =
-            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>().apply {
-                natural(WidgetKey.Sku::class.java)
-            }.build()
+            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>()
+                .apply {
+                    natural(WidgetKey.Sku::class.java)
+                }.build()
 
         assertThat(plan.passes.single().name).isEqualTo("Sku")
     }
@@ -189,7 +192,9 @@ class ErgonomicDslTest {
         assertThat(inferred.rememberedRemoteId).isNull()
         assertThat(inferred.changedAt).isNull()
 
-        assertThat(SyncRegistration.inferred(remoteId = null, remotelyDeletedAt = deletedAt).changedAt).isEqualTo(deletedAt)
+        assertThat(
+            SyncRegistration.inferred(remoteId = null, remotelyDeletedAt = deletedAt).changedAt,
+        ).isEqualTo(deletedAt)
         val withExplicit = SyncRegistration.inferred(remoteId = null, changedAt = explicit, version = version)
         assertThat(withExplicit.changedAt).isEqualTo(explicit)
         assertThat(withExplicit.version).isEqualTo(version)

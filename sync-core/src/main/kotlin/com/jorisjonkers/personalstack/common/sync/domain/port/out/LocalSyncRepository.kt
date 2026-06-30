@@ -20,16 +20,26 @@ interface LocalSyncRepository<A : Any, RID : Any, SCOPE : Any> {
      * or `null` when no local row references that remote id. MUST include soft-deleted and
      * unlinked rows.
      */
-    fun findByRemoteIdIncludingDeleted(remoteId: RID, scope: SCOPE?, context: SyncContext<SCOPE>): A?
+    fun findByRemoteIdIncludingDeleted(
+        remoteId: RID,
+        scope: SCOPE?,
+        context: SyncContext<SCOPE>,
+    ): A?
 
     /**
      * Returns all local aggregates within [scope], including soft-deleted and unlinked rows.
      * Used by list reconciliation to detect absence-driven deletes/unlinks.
      */
-    fun listIncludingDeleted(scope: SCOPE, context: SyncContext<SCOPE>): List<A>
+    fun listIncludingDeleted(
+        scope: SCOPE,
+        context: SyncContext<SCOPE>,
+    ): List<A>
 
     /** Persists [aggregate] and returns the stored state. Called only inside a [SyncUnitOfWork] transaction. */
-    fun save(aggregate: A, context: SyncContext<SCOPE>): A
+    fun save(
+        aggregate: A,
+        context: SyncContext<SCOPE>,
+    ): A
 
     /**
      * Returns a page of currently linked remote ids for [scope], used by spawn/backfill full-sync

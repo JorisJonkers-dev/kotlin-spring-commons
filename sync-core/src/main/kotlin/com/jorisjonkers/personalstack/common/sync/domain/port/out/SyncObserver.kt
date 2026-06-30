@@ -14,7 +14,10 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncReport
 interface SyncObserver {
     fun onRunStarted(context: SyncContext<*>)
 
-    fun onOutcome(context: SyncContext<*>, outcome: SyncOutcome<*>)
+    fun onOutcome(
+        context: SyncContext<*>,
+        outcome: SyncOutcome<*>,
+    )
 
     fun onRunCompleted(report: SyncReport)
 }

@@ -42,7 +42,10 @@ internal object SyncReportStatuses {
         val anySucceeded = outcomes.any { it is SyncOutcome.Succeeded }
         val anyFailed = outcomes.any { it is SyncOutcome.Failed }
         val anyConflict =
-            outcomes.any { it is SyncOutcome.Skipped && it.action == com.jorisjonkers.personalstack.common.sync.domain.SyncAction.CONFLICT }
+            outcomes.any {
+                it is SyncOutcome.Skipped &&
+                    it.action == com.jorisjonkers.personalstack.common.sync.domain.SyncAction.CONFLICT
+            }
 
         return when {
             anyFailed && anySucceeded -> SyncReportStatus.PARTIAL

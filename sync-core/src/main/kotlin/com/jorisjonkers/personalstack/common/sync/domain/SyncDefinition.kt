@@ -15,7 +15,10 @@ fun interface RemoteProjector<R : Any, RID : Any, KEY : Any> {
 
 /** Computes the [ChangeSet] between a local aggregate and a remote record; must be pure. */
 fun interface SyncDiffer<A : Any, R : Any> {
-    fun diff(local: A, remote: R): ChangeSet
+    fun diff(
+        local: A,
+        remote: R,
+    ): ChangeSet
 }
 
 /**
@@ -34,17 +37,43 @@ interface SyncProjection<A : Any, R : Any, RID : Any, KEY : Any> {
  * transaction; for dry-run they are invoked only if documented pure.
  */
 interface SyncMapper<A : Any, R : Any, SCOPE : Any> {
-    fun create(remote: R, context: SyncContext<SCOPE>): A
+    fun create(
+        remote: R,
+        context: SyncContext<SCOPE>,
+    ): A
 
-    fun update(local: A, remote: R, changes: ChangeSet, context: SyncContext<SCOPE>): A
+    fun update(
+        local: A,
+        remote: R,
+        changes: ChangeSet,
+        context: SyncContext<SCOPE>,
+    ): A
 
-    fun restore(local: A, remote: R, changes: ChangeSet, context: SyncContext<SCOPE>): A
+    fun restore(
+        local: A,
+        remote: R,
+        changes: ChangeSet,
+        context: SyncContext<SCOPE>,
+    ): A
 
-    fun relink(local: A, remote: R, changes: ChangeSet, context: SyncContext<SCOPE>): A
+    fun relink(
+        local: A,
+        remote: R,
+        changes: ChangeSet,
+        context: SyncContext<SCOPE>,
+    ): A
 
-    fun delete(local: A, signal: RemoteDeleteSignal<*>, context: SyncContext<SCOPE>): A
+    fun delete(
+        local: A,
+        signal: RemoteDeleteSignal<*>,
+        context: SyncContext<SCOPE>,
+    ): A
 
-    fun unlink(local: A, reason: UnlinkReason, context: SyncContext<SCOPE>): A
+    fun unlink(
+        local: A,
+        reason: UnlinkReason,
+        context: SyncContext<SCOPE>,
+    ): A
 }
 
 /** Decides whether a remote record is eligible to be imported as a new local aggregate. */
@@ -58,7 +87,10 @@ fun interface ImportPolicy<R : Any> {
  * default a consumer should pick is a conflict; the worked example chooses delete/unlink.
  */
 fun interface MissingRemotePolicy<A : Any, RID : Any, KEY : Any> {
-    fun decide(local: LocalRecord<A, RID, KEY>, observedAt: Instant): SyncDecision<A, Nothing, RID>
+    fun decide(
+        local: LocalRecord<A, RID, KEY>,
+        observedAt: Instant,
+    ): SyncDecision<A, Nothing, RID>
 }
 
 /** Which side wins on divergence. The framework's reconciliation is remote-authoritative by default. */
@@ -79,9 +111,13 @@ enum class ListTransactionMode {
 data class SyncExecutionOptions(
     val listTransactionMode: ListTransactionMode = ListTransactionMode.PER_RECORD,
     val pageSize: Int = 500,
-    val lockTimeout: Duration = Duration.ofSeconds(10),
+    val lockTimeout: Duration = Duration.ofSeconds(DEFAULT_LOCK_TIMEOUT_SECONDS),
     val authorityMode: AuthorityMode = AuthorityMode.REMOTE_AUTHORITATIVE,
-)
+) {
+    private companion object {
+        private const val DEFAULT_LOCK_TIMEOUT_SECONDS = 10L
+    }
+}
 
 /**
  * The decision policies for a resource. [conflictPolicy] defaults to fail-closed;

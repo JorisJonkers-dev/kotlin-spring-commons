@@ -20,7 +20,7 @@ import com.jorisjonkers.personalstack.common.sync.domain.UnlinkReason
 import com.jorisjonkers.personalstack.common.sync.domain.VersionStamp
 import java.time.Instant
 
-/**
+/*
  * Canonical test domain for the sync harness. A tiny `Widget` aggregate synced from a
  * `RemoteWidget` DTO. The generic parameters used everywhere in the harness are:
  *
@@ -33,19 +33,28 @@ import java.time.Instant
 
 /** Remote id of a widget (RID). */
 @JvmInline
-value class WidgetId(val value: String)
+value class WidgetId(
+    val value: String,
+)
 
 /** Scope partition for list/spawn sync (SCOPE). */
 @JvmInline
-value class WidgetScope(val value: String)
+value class WidgetScope(
+    val value: String,
+)
 
 /**
  * Sealed match key (KEY). [Remote] is the hard remote-id key; [Sku] is a natural key for soft
  * matching passes (relink by SKU).
  */
 sealed interface WidgetKey {
-    data class Remote(val id: WidgetId) : WidgetKey
-    data class Sku(val sku: String) : WidgetKey
+    data class Remote(
+        val id: WidgetId,
+    ) : WidgetKey
+
+    data class Sku(
+        val sku: String,
+    ) : WidgetKey
 }
 
 /**
@@ -62,7 +71,12 @@ data class Widget(
 ) {
     companion object {
         /** A brand-new, never-linked widget (e.g. produced by tests before import). */
-        fun neverLinked(localId: String, sku: String, name: String, scope: WidgetScope = WidgetScope("default")): Widget =
+        fun neverLinked(
+            localId: String,
+            sku: String,
+            name: String,
+            scope: WidgetScope = WidgetScope("default"),
+        ): Widget =
             Widget(
                 localId = LocalId(localId),
                 sku = sku,
@@ -144,10 +158,11 @@ data class RemoteWidget(
 object WidgetLocalProjector : LocalProjector<Widget, WidgetId, WidgetKey> {
     override fun project(local: Widget): LocalRecord<Widget, WidgetId, WidgetKey> {
         val rid = local.registration.remoteId ?: local.registration.rememberedRemoteId
-        val keys = buildSet<WidgetKey> {
-            rid?.let { add(WidgetKey.Remote(it)) }
-            add(WidgetKey.Sku(local.sku))
-        }
+        val keys =
+            buildSet<WidgetKey> {
+                rid?.let { add(WidgetKey.Remote(it)) }
+                add(WidgetKey.Sku(local.sku))
+            }
         return LocalRecord(
             aggregate = local,
             localId = local.localId,
@@ -173,7 +188,10 @@ object WidgetRemoteProjector : RemoteProjector<RemoteWidget, WidgetId, WidgetKey
 
 /** Pure differ: reports `name` changed when the two sides disagree, else an empty change set. */
 object WidgetDiffer : SyncDiffer<Widget, RemoteWidget> {
-    override fun diff(local: Widget, remote: RemoteWidget): ChangeSet =
+    override fun diff(
+        local: Widget,
+        remote: RemoteWidget,
+    ): ChangeSet =
         if (local.name == remote.name) {
             ChangeSet()
         } else {
@@ -191,7 +209,10 @@ object WidgetDiffer : SyncDiffer<Widget, RemoteWidget> {
 
 /** Anti-corruption mapper producing new [Widget] states for each executable action. */
 object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetScope> {
-    override fun create(remote: RemoteWidget, context: SyncContext<WidgetScope>): Widget =
+    override fun create(
+        remote: RemoteWidget,
+        context: SyncContext<WidgetScope>,
+    ): Widget =
         Widget(
             localId = LocalId("local-${remote.id.value}"),
             sku = remote.sku,
@@ -207,14 +228,24 @@ object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetScope> {
                 ),
         )
 
-    override fun update(local: Widget, remote: RemoteWidget, changes: ChangeSet, context: SyncContext<WidgetScope>): Widget =
+    override fun update(
+        local: Widget,
+        remote: RemoteWidget,
+        changes: ChangeSet,
+        context: SyncContext<WidgetScope>,
+    ): Widget =
         local.copy(
             name = remote.name,
             sku = remote.sku,
             registration = local.registration.link(remote.id, remote.version, context.startedAt),
         )
 
-    override fun restore(local: Widget, remote: RemoteWidget, changes: ChangeSet, context: SyncContext<WidgetScope>): Widget =
+    override fun restore(
+        local: Widget,
+        remote: RemoteWidget,
+        changes: ChangeSet,
+        context: SyncContext<WidgetScope>,
+    ): Widget =
         local.copy(
             name = remote.name,
             sku = remote.sku,
@@ -222,13 +253,22 @@ object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetScope> {
             registration = local.registration.restore(remote.id, remote.version, context.startedAt),
         )
 
-    override fun relink(local: Widget, remote: RemoteWidget, changes: ChangeSet, context: SyncContext<WidgetScope>): Widget =
+    override fun relink(
+        local: Widget,
+        remote: RemoteWidget,
+        changes: ChangeSet,
+        context: SyncContext<WidgetScope>,
+    ): Widget =
         local.copy(
             name = remote.name,
             registration = local.registration.relink(remote.id, remote.version, context.startedAt),
         )
 
-    override fun delete(local: Widget, signal: RemoteDeleteSignal<*>, context: SyncContext<WidgetScope>): Widget {
+    override fun delete(
+        local: Widget,
+        signal: RemoteDeleteSignal<*>,
+        context: SyncContext<WidgetScope>,
+    ): Widget {
         @Suppress("UNCHECKED_CAST")
         val typed = signal as RemoteDeleteSignal<WidgetId>
         return local.copy(
@@ -237,6 +277,9 @@ object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetScope> {
         )
     }
 
-    override fun unlink(local: Widget, reason: UnlinkReason, context: SyncContext<WidgetScope>): Widget =
-        local.copy(registration = local.registration.unlink(reason, context.startedAt))
+    override fun unlink(
+        local: Widget,
+        reason: UnlinkReason,
+        context: SyncContext<WidgetScope>,
+    ): Widget = local.copy(registration = local.registration.unlink(reason, context.startedAt))
 }

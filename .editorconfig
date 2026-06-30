@@ -11,6 +11,7 @@ trim_trailing_whitespace = true
 [*.{kt,kts,java}]
 indent_size = 4
 max_line_length = 120
+ktlint_standard_package-name = disabled
 
 [*.md]
 trim_trailing_whitespace = false

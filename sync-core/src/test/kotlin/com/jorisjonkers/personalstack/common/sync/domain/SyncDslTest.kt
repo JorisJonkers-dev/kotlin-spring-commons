@@ -20,14 +20,16 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetLocalProject
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetMapper
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetRemoteProjector
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import java.time.Duration
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.time.Instant
 
 class SyncDslTest {
     @Test
+    // Structural threshold: this DSL smoke test intentionally exercises every setter in one definition.
+    @Suppress("LongMethod")
     fun `syncResource wires every setter and sub-builder override`() {
         val repository = widgetRepository()
         val remoteCatalog = InMemoryRemoteCatalog<RemoteWidget, WidgetId, WidgetKey, WidgetScope>()
@@ -126,8 +128,12 @@ class SyncDslTest {
             .isEqualTo(WidgetScope("scope-1"))
         assertThat(definition.matchPlan.passes.map { it.name }).containsExactly("remote-id", "sku")
         assertThat(definition.matchPlan.passes[0].confidence).isEqualTo(MatchConfidence.HARD)
-        assertThat(definition.matchPlan.passes[0].localKeys(localRecord)).containsExactly(WidgetKey.Remote(WidgetId("w-1")))
-        assertThat(definition.matchPlan.passes[0].remoteKeys(remoteRecord)).containsExactly(WidgetKey.Remote(WidgetId("w-1")))
+        assertThat(
+            definition.matchPlan.passes[0].localKeys(localRecord),
+        ).containsExactly(WidgetKey.Remote(WidgetId("w-1")))
+        assertThat(
+            definition.matchPlan.passes[0].remoteKeys(remoteRecord),
+        ).containsExactly(WidgetKey.Remote(WidgetId("w-1")))
         assertThat(definition.matchPlan.passes[1].confidence).isEqualTo(MatchConfidence.NATURAL_KEY)
         assertThat(definition.matchPlan.passes[1].localKeys(localRecord)).containsExactly(WidgetKey.Sku("SKU-1"))
         assertThat(definition.matchPlan.passes[1].remoteKeys(remoteRecord)).containsExactly(WidgetKey.Sku("SKU-1"))
@@ -166,8 +172,11 @@ class SyncDslTest {
 
         assertThat(definition.policies.importPolicy.importable(RemoteWidget(WidgetId("w-1"), "SKU-1", "Remote")))
             .isTrue()
-        assertThat(definition.policies.importPolicy.importable(RemoteWidget(WidgetId("w-2"), "SKU-2", "Remote", importable = false)))
-            .isFalse()
+        assertThat(
+            definition.policies.importPolicy.importable(
+                RemoteWidget(WidgetId("w-2"), "SKU-2", "Remote", importable = false),
+            ),
+        ).isFalse()
 
         val decision = definition.policies.missingRemotePolicy.decide(localRecord, observedAt)
 
@@ -305,6 +314,8 @@ class SyncDslTest {
             .hasMessage("policies { } must declare a missingRemotePolicy — absence handling is business-specific")
     }
 
+    // Structural threshold: omission branches mirror the DSL's required fields one-for-one.
+    @Suppress("CyclomaticComplexMethod")
     private fun minimalDefinition(
         omit: String? = null,
         importPolicy: ImportPolicy<RemoteWidget>? = null,
