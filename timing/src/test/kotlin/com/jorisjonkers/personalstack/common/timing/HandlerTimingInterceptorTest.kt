@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
+import java.time.Instant
 
 class HandlerTimingInterceptorTest {
     private val interceptor = HandlerTimingInterceptor()
@@ -66,5 +67,19 @@ class HandlerTimingInterceptorTest {
 
         assertThat(appender.list.single().formattedMessage)
             .contains("POST /api/v1/auth/login")
+    }
+
+    @Test
+    fun `postHandle records controller return checkpoint`() {
+        val request = MockHttpServletRequest("GET", "/api/v1/auth/me")
+        val response = MockHttpServletResponse()
+        val before = Instant.now()
+
+        interceptor.postHandle(request, response, Any(), null)
+
+        val recorded =
+            request.getAttribute(RequestTimingAttributes.HANDLER_INVOKED_INSTANT) as? Instant
+        assertThat(recorded).isNotNull()
+        assertThat(recorded).isAfterOrEqualTo(before)
     }
 }

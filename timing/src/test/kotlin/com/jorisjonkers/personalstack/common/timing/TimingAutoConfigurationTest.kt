@@ -1,11 +1,18 @@
 package com.jorisjonkers.personalstack.common.timing
 
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.jooq.impl.DefaultExecuteListenerProvider
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.FilteredClassLoader
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.web.servlet.HandlerInterceptor
+import org.springframework.web.servlet.config.annotation.InterceptorRegistration
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry
 
 class TimingAutoConfigurationTest {
     private val runner =
@@ -47,5 +54,18 @@ class TimingAutoConfigurationTest {
                 assertThat(context).doesNotHaveBean(RequestTimingFilter::class.java)
                 assertThat(context).doesNotHaveBean(DefaultExecuteListenerProvider::class.java)
             }
+    }
+
+    @Test
+    fun `web mvc configurer registers the handler timing interceptor`() {
+        val configurer = TimingAutoConfiguration().handlerTimingWebMvcConfigurer()
+        val registry = mockk<InterceptorRegistry>()
+        val interceptor = slot<HandlerInterceptor>()
+        every { registry.addInterceptor(capture(interceptor)) } returns mockk<InterceptorRegistration>(relaxed = true)
+
+        configurer.addInterceptors(registry)
+
+        verify(exactly = 1) { registry.addInterceptor(any()) }
+        assertThat(interceptor.captured).isInstanceOf(HandlerTimingInterceptor::class.java)
     }
 }
