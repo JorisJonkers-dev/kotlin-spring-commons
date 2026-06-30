@@ -89,14 +89,17 @@ class SyncAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(SyncCheckpointStore::class)
-    fun checkpointStore(properties: SyncProperties): SyncCheckpointStore = UnsupportedSyncCheckpointStore
+    fun checkpointStore(): SyncCheckpointStore = UnsupportedSyncCheckpointStore
 
     // --- default adapter implementations -----------------------------------
 
     private object NoopAuditTrail : AuditTrail {
         override fun recordRunStarted(context: SyncContext<*>) = Unit
 
-        override fun recordOutcome(context: SyncContext<*>, outcome: SyncOutcome<*>) = Unit
+        override fun recordOutcome(
+            context: SyncContext<*>,
+            outcome: SyncOutcome<*>,
+        ) = Unit
 
         override fun recordRunCompleted(report: SyncReport) = Unit
     }
@@ -104,7 +107,10 @@ class SyncAutoConfiguration {
     private object NoopSyncObserver : SyncObserver {
         override fun onRunStarted(context: SyncContext<*>) = Unit
 
-        override fun onOutcome(context: SyncContext<*>, outcome: SyncOutcome<*>) = Unit
+        override fun onOutcome(
+            context: SyncContext<*>,
+            outcome: SyncOutcome<*>,
+        ) = Unit
 
         override fun onRunCompleted(report: SyncReport) = Unit
     }
@@ -115,7 +121,10 @@ class SyncAutoConfiguration {
      * real outbox is configured.
      */
     private object RejectingSyncEffectOutbox : SyncEffectOutbox {
-        override fun append(context: SyncContext<*>, effects: List<SyncEffect>) {
+        override fun append(
+            context: SyncContext<*>,
+            effects: List<SyncEffect>,
+        ) {
             require(effects.isEmpty()) {
                 "No SyncEffectOutbox bean is configured but ${effects.size} effect(s) were emitted " +
                     "for sync '${context.syncName.value}'. Provide a real SyncEffectOutbox bean to " +
@@ -128,42 +137,75 @@ class SyncAutoConfiguration {
 
     /** Explicit, opt-in no-op store used only when idempotency is disabled by property. */
     private object NoopIdempotencyStore : IdempotencyStore {
-        override fun claim(key: IdempotencyKey, ttl: Duration, context: SyncContext<*>): IdempotencyClaim =
-            IdempotencyClaim.Acquired
+        override fun claim(
+            key: IdempotencyKey,
+            ttl: Duration,
+            context: SyncContext<*>,
+        ): IdempotencyClaim = IdempotencyClaim.Acquired
 
-        override fun complete(key: IdempotencyKey, report: SyncReport) = Unit
+        override fun complete(
+            key: IdempotencyKey,
+            report: SyncReport,
+        ) = Unit
 
-        override fun fail(key: IdempotencyKey, failure: SyncFailure) = Unit
+        override fun fail(
+            key: IdempotencyKey,
+            failure: SyncFailure,
+        ) = Unit
     }
 
     /** Fails on claim so a required-but-unconfigured idempotency setup cannot pass silently. */
     private object RequiredButUnconfiguredIdempotencyStore : IdempotencyStore {
-        override fun claim(key: IdempotencyKey, ttl: Duration, context: SyncContext<*>): IdempotencyClaim =
+        override fun claim(
+            key: IdempotencyKey,
+            ttl: Duration,
+            context: SyncContext<*>,
+        ): IdempotencyClaim =
             throw IllegalStateException(
                 "Idempotency is REQUIRED_FOR_EXTERNAL_TRIGGERS but no IdempotencyStore bean is configured. " +
                     "Provide a real IdempotencyStore, or set ${SyncProperties.PREFIX}.idempotency=disabled.",
             )
 
-        override fun complete(key: IdempotencyKey, report: SyncReport) = Unit
+        override fun complete(
+            key: IdempotencyKey,
+            report: SyncReport,
+        ) = Unit
 
-        override fun fail(key: IdempotencyKey, failure: SyncFailure) = Unit
+        override fun fail(
+            key: IdempotencyKey,
+            failure: SyncFailure,
+        ) = Unit
     }
 
     /**
      * Default checkpoint store that fails when actually used. Entity sync that
      * never touches checkpoints works fine; spawn/backfill and MULTI_WRITER modes
      * require a real store and will fail loudly here.
+     *
+     * Internal so its fail-loudly methods are directly unit-testable; the bean is
+     * only installed when no real SyncCheckpointStore is provided.
      */
-    // internal (not private) so its fail-loudly methods are directly unit-testable; the bean is
-    // only installed when no real SyncCheckpointStore is provided.
     internal object UnsupportedSyncCheckpointStore : SyncCheckpointStore {
-        override fun loadCursor(syncName: SyncName, scope: Any?): CursorCheckpoint = unsupported()
+        override fun loadCursor(
+            syncName: SyncName,
+            scope: Any?,
+        ): CursorCheckpoint = unsupported()
 
-        override fun saveCursorIfCurrent(previous: CursorCheckpoint?, next: CursorCheckpoint): Boolean = unsupported()
+        override fun saveCursorIfCurrent(
+            previous: CursorCheckpoint?,
+            next: CursorCheckpoint,
+        ): Boolean = unsupported()
 
-        override fun loadBaseline(syncName: SyncName, subject: SyncSubject<*>): BaselineSnapshot = unsupported()
+        override fun loadBaseline(
+            syncName: SyncName,
+            subject: SyncSubject<*>,
+        ): BaselineSnapshot = unsupported()
 
-        override fun saveBaseline(syncName: SyncName, subject: SyncSubject<*>, baseline: BaselineSnapshot) = unsupported()
+        override fun saveBaseline(
+            syncName: SyncName,
+            subject: SyncSubject<*>,
+            baseline: BaselineSnapshot,
+        ) = unsupported()
 
         private fun unsupported(): Nothing =
             throw IllegalStateException(

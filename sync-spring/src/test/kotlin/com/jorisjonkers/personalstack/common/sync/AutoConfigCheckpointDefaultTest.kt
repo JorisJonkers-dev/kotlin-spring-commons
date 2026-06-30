@@ -9,12 +9,12 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncName
 import com.jorisjonkers.personalstack.common.sync.domain.SyncSubject
 import com.jorisjonkers.personalstack.common.sync.domain.VersionStamp
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncCheckpointStore
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import java.time.Instant
 
 class AutoConfigCheckpointDefaultTest {
     @Test
@@ -77,9 +77,20 @@ class AutoConfigCheckpointDefaultTest {
             )
 
         assertThatThrownBy { store.loadCursor(syncName, "scope-2") }.isInstanceOf(IllegalStateException::class.java)
-        assertThatThrownBy { store.saveCursorIfCurrent(null, checkpoint) }.isInstanceOf(IllegalStateException::class.java)
+        assertThatThrownBy {
+            store.saveCursorIfCurrent(
+                null,
+                checkpoint,
+            )
+        }.isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { store.loadBaseline(syncName, subject) }.isInstanceOf(IllegalStateException::class.java)
-        assertThatThrownBy { store.saveBaseline(syncName, subject, baseline) }.isInstanceOf(IllegalStateException::class.java)
+        assertThatThrownBy {
+            store.saveBaseline(
+                syncName,
+                subject,
+                baseline,
+            )
+        }.isInstanceOf(IllegalStateException::class.java)
     }
 
     private companion object {

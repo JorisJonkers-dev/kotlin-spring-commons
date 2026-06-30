@@ -41,29 +41,30 @@ class Resilience4jRemoteCatalog<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     override fun fetchOne(
         remoteId: RID,
         context: SyncContext<SCOPE>,
-    ): RemoteFetch<RemoteRecord<R, RID, KEY>> =
-        guarded { delegate.fetchOne(remoteId, context) }
+    ): RemoteFetch<RemoteRecord<R, RID, KEY>> = guarded { delegate.fetchOne(remoteId, context) }
 
     override fun fetchForScope(
         scope: SCOPE,
         context: SyncContext<SCOPE>,
-    ): RemoteFetch<RemotePage<R, RID, KEY>> =
-        guarded { delegate.fetchForScope(scope, context) }
+    ): RemoteFetch<RemotePage<R, RID, KEY>> = guarded { delegate.fetchForScope(scope, context) }
 
     override fun fetchPage(
         scope: SCOPE?,
         cursor: SyncCursor?,
         pageSize: Int,
         context: SyncContext<SCOPE>,
-    ): RemoteFetch<RemotePage<R, RID, KEY>> =
-        guarded { delegate.fetchPage(scope, cursor, pageSize, context) }
+    ): RemoteFetch<RemotePage<R, RID, KEY>> = guarded { delegate.fetchPage(scope, cursor, pageSize, context) }
 
     /**
      * Runs [call] through retry then circuit breaker, translating any thrown
      * exception or delegate-reported [RemoteFetch.Failed] into a
      * [RemoteFetch.Failed]. The thrown [RetryableRemoteException] is used purely
      * so resilience4j records a delegate-reported failure as a failed call.
+     *
+     * Delegate transports are intentionally opaque, so every non-retry carrier exception
+     * is converted into the RemoteFetch failure algebra at this adapter boundary.
      */
+    @Suppress("TooGenericExceptionCaught")
     private fun <T : Any> guarded(call: () -> RemoteFetch<T>): RemoteFetch<T> =
         try {
             decorate(call).invoke()
