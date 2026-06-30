@@ -21,6 +21,30 @@ class PlaywrightNavigationRetriesTest {
     }
 
     @Test
+    fun `uses default navigation retry settings`() {
+        val attempts = AtomicInteger()
+
+        PlaywrightNavigationRetries.retryOnConnectionRefused {
+            attempts.incrementAndGet()
+        }
+
+        assertThat(attempts.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `backs off between connection refused navigation retries`() {
+        val attempts = AtomicInteger()
+
+        PlaywrightNavigationRetries.retryOnConnectionRefused(attempts = 2, delayMillis = 1) {
+            if (attempts.incrementAndGet() == 1) {
+                throw PlaywrightException("page.navigate: net::ERR_CONNECTION_REFUSED at http://localhost:3000")
+            }
+        }
+
+        assertThat(attempts.get()).isEqualTo(2)
+    }
+
+    @Test
     fun `throws last connection refused error after exhausting attempts`() {
         val attempts = AtomicInteger()
         val failure = PlaywrightException("page.navigate: net::ERR_CONNECTION_REFUSED at http://localhost:3000")

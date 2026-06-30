@@ -29,10 +29,40 @@ class TotpTestCodesTest {
     }
 
     @Test
+    fun `generate uses default time and digit settings`() {
+        val secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+        assertThat(TotpTestCodes.generate(secret)).matches("\\d{6}")
+    }
+
+    @Test
     fun `generate fresh returns a six digit code when current step has enough validity`() {
         val secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 
         val code = TotpTestCodes.generateFresh(secret, nowMillis = 1, minValiditySeconds = 0)
+
+        assertThat(code).matches("\\d{6}")
+    }
+
+    @Test
+    fun `generate fresh uses default freshness settings`() {
+        val secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+        assertThat(TotpTestCodes.generateFresh(secret, nowMillis = 1)).matches("\\d{6}")
+        assertThat(TotpTestCodes.generateFresh(secret, minValiditySeconds = 0)).matches("\\d{6}")
+    }
+
+    @Test
+    fun `generate fresh waits for the next step when the code is nearly expired`() {
+        val secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+        val code =
+            TotpTestCodes.generateFresh(
+                secret,
+                nowMillis = 29_999,
+                stepSeconds = 30,
+                minValiditySeconds = 1,
+            )
 
         assertThat(code).matches("\\d{6}")
     }

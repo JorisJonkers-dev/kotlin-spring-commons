@@ -1,4 +1,5 @@
 import org.gradle.api.provider.ListProperty
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 
 plugins {
     kotlin("jvm")
@@ -32,3 +33,17 @@ dependencies {
     "**/PlaywrightSystemTestBase*",
     "**/StalwartMailClient*",
 )
+
+afterEvaluate {
+    tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+        violationRules {
+            rule {
+                limit {
+                    counter = "LINE"
+                    value = "COVEREDRATIO"
+                    minimum = "1.00".toBigDecimal()
+                }
+            }
+        }
+    }
+}

@@ -18,8 +18,25 @@ class FqcnShardConditionTest {
     }
 
     @Test
+    fun `exposes shard ownership as a Java static method`() {
+        val method =
+            FqcnShardCondition::class.java.getDeclaredMethod(
+                "owns",
+                String::class.java,
+                java.lang.Integer.TYPE,
+                java.lang.Integer.TYPE,
+            )
+
+        val ownsShard = method.invoke(null, "com.example.StaticCallTest", 1, 1)
+
+        assertThat(ownsShard).isEqualTo(true)
+    }
+
+    @Test
     fun `rejects invalid shard configuration`() {
         assertThatThrownBy { FqcnShardCondition.owns("Test", 0, 2) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { FqcnShardCondition.owns("Test", 3, 2) }
             .isInstanceOf(IllegalArgumentException::class.java)
         assertThatThrownBy { FqcnShardCondition.owns("Test", 1, 0) }
             .isInstanceOf(IllegalArgumentException::class.java)
@@ -41,6 +58,13 @@ class FqcnShardConditionTest {
     }
 
     @Test
+    fun `default constructor reads the current environment`() {
+        val result = FqcnShardCondition().evaluateExecutionCondition(extensionContextFor(FqcnShardConditionTest::class.java))
+
+        assertThat(result.isDisabled).isFalse()
+    }
+
+    @Test
     fun `disables tests when shard index is missing`() {
         val condition =
             FqcnShardCondition(
@@ -57,6 +81,15 @@ class FqcnShardConditionTest {
 
     @Test
     fun `disables tests when shard index is outside configured range`() {
+        val lowIndexResult =
+            FqcnShardCondition(
+                SystemTestEnvironment(
+                    mapOf(
+                        "test.shard.index" to "0",
+                        "test.shard.count" to "3",
+                    ),
+                ),
+            ).evaluateExecutionCondition(extensionContextFor(FqcnShardConditionTest::class.java))
         val condition =
             FqcnShardCondition(
                 SystemTestEnvironment(
@@ -69,6 +102,8 @@ class FqcnShardConditionTest {
 
         val result = condition.evaluateExecutionCondition(extensionContextFor(FqcnShardConditionTest::class.java))
 
+        assertThat(lowIndexResult.isDisabled).isTrue()
+        assertThat(lowIndexResult.reason).contains("test.shard.index=0 outside 1..3")
         assertThat(result.isDisabled).isTrue()
         assertThat(result.reason).contains("test.shard.index=4 outside 1..3")
     }
