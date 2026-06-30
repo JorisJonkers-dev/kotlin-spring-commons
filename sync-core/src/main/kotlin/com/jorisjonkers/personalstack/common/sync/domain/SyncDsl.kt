@@ -9,6 +9,7 @@ import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncCheckpoint
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncEffectOutbox
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncObserver
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncUnitOfWork
+import java.time.Instant
 
 /**
  * Restricts implicit receivers inside the [syncResource] DSL so a nested block cannot accidentally
@@ -80,7 +81,30 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     fun idempotencyStore(port: IdempotencyStore) { idempotencyStore = port }
     fun checkpointStore(port: SyncCheckpointStore) { checkpointStore = port }
 
+    /**
+     * Wire all nine outbound ports at once from a prepared [SyncPorts] bag. Sugar for the
+     * individual setters (last call wins), letting a consumer declare ports as a separate bean.
+     */
+    fun ports(ports: SyncPorts<A, R, RID, KEY, SCOPE>) {
+        localRepository(ports.localRepository)
+        remoteCatalog(ports.remoteCatalog)
+        lockManager(ports.lockManager)
+        unitOfWork(ports.unitOfWork)
+        effectOutbox(ports.effectOutbox)
+        auditTrail(ports.auditTrail)
+        observer(ports.observer)
+        idempotencyStore(ports.idempotencyStore)
+        checkpointStore(ports.checkpointStore)
+    }
+
     // --- pure strategies --------------------------------------------------------------------
+
+    /** Set both projectors from one named [SyncProjection] object (equivalent to the two setters). */
+    fun projection(projection: SyncProjection<A, R, RID, KEY>) {
+        localProjector { projection.local(it) }
+        remoteProjector { projection.remote(it) }
+    }
+
     fun localProjector(project: (A) -> LocalRecord<A, RID, KEY>) {
         localProjector = LocalProjector { project(it) }
     }
@@ -149,6 +173,44 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
         passes += MatchPass(name = name, localKeys = localKeys, remoteKeys = remoteKeys, confidence = confidence)
     }
 
+    /** Hard pass: the local *active* remote id against the remote external id. */
+    fun remoteId(keyOf: (RID) -> KEY, name: String = "remote-id") {
+        pass(
+            name = name,
+            confidence = MatchConfidence.HARD,
+            localKeys = { local -> local.registration.remoteId?.let { setOf(keyOf(it)) } ?: emptySet() },
+            remoteKeys = { remote -> setOf(keyOf(remote.externalId)) },
+        )
+    }
+
+    /** Soft pass: the local *remembered* remote id against the remote external id (re-link). */
+    fun rememberedRemoteId(keyOf: (RID) -> KEY, name: String = "remembered-remote-id") {
+        pass(
+            name = name,
+            confidence = MatchConfidence.REMEMBERED_REMOTE_ID,
+            localKeys = { local -> local.registration.rememberedRemoteId?.let { setOf(keyOf(it)) } ?: emptySet() },
+            remoteKeys = { remote -> setOf(keyOf(remote.externalId)) },
+        )
+    }
+
+    /**
+     * Natural-key pass over the projected [LocalRecord.keys]/[RemoteRecord.keys] of subtype [keyClass].
+     * Filtering is by erased runtime class, so the key must be a concrete subtype, not itself generic.
+     * [name] defaults to the key class's simple name (e.g. `natural(Email::class.java)` -> "Email").
+     */
+    fun <K : KEY> natural(
+        keyClass: Class<K>,
+        name: String = keyClass.simpleName,
+        confidence: MatchConfidence = MatchConfidence.NATURAL_KEY,
+    ) {
+        pass(
+            name = name,
+            confidence = confidence,
+            localKeys = { local -> local.keys.filterIsInstance(keyClass).toSet() },
+            remoteKeys = { remote -> remote.keys.filterIsInstance(keyClass).toSet() },
+        )
+    }
+
     fun build(): MatchPlan<A, R, RID, KEY> = MatchPlan(passes.toList())
 }
 
@@ -194,3 +256,64 @@ class ExecutionBuilder(initial: SyncExecutionOptions) {
             authorityMode = authorityMode,
         )
 }
+
+// --- consumer projection helpers ------------------------------------------------------------
+// Reduce the boilerplate of hand-building LocalRecord/RemoteRecord/SyncRegistration inside a
+// projector, while compiling down to the same domain types. The raw constructors stay available.
+
+/** Build a match-key set from possibly-null keys, dropping nulls and collapsing duplicates. */
+fun <KEY : Any> syncKeys(vararg keys: KEY?): Set<KEY> = keys.filterNotNull().toSet()
+
+/**
+ * Build a [LocalRecord] with an inferred link [SyncRegistration] (see [SyncRegistration.inferred]).
+ * [rememberedRemoteId] is NOT defaulted from [remoteId] — pass it explicitly to retain link history.
+ */
+fun <A : Any, RID : Any, KEY : Any> localRecord(
+    aggregate: A,
+    localId: LocalId?,
+    remoteId: RID?,
+    rememberedRemoteId: RID? = null,
+    remotelyDeletedAt: Instant? = null,
+    changedAt: Instant? = remotelyDeletedAt,
+    version: VersionStamp? = null,
+    lifecycle: SyncRegistrationLifecycle? = null,
+    keys: Iterable<KEY> = emptyList(),
+): LocalRecord<A, RID, KEY> =
+    LocalRecord(
+        aggregate = aggregate,
+        localId = localId,
+        registration =
+            SyncRegistration.inferred(
+                remoteId = remoteId,
+                rememberedRemoteId = rememberedRemoteId,
+                remotelyDeletedAt = remotelyDeletedAt,
+                changedAt = changedAt,
+                version = version,
+                lifecycle = lifecycle,
+            ),
+        keys = keys.toSet(),
+    )
+
+/**
+ * Build a [RemoteRecord]. [deleted] drives only the lifecycle (ACTIVE vs DELETED); import
+ * eligibility stays an explicit [importable] (default `true`, matching the constructor) so the
+ * two never become implicitly coupled.
+ */
+fun <R : Any, RID : Any, KEY : Any> remoteRecord(
+    record: R,
+    externalId: RID,
+    keys: Iterable<KEY> = emptyList(),
+    deleted: Boolean = false,
+    importable: Boolean = true,
+    version: VersionStamp? = null,
+    observedAt: Instant? = null,
+): RemoteRecord<R, RID, KEY> =
+    RemoteRecord(
+        record = record,
+        externalId = externalId,
+        keys = keys.toSet(),
+        lifecycle = if (deleted) RemoteRecordLifecycle.DELETED else RemoteRecordLifecycle.ACTIVE,
+        importable = importable,
+        version = version,
+        observedAt = observedAt,
+    )

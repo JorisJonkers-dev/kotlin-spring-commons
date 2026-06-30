@@ -19,6 +19,16 @@ fun interface SyncDiffer<A : Any, R : Any> {
 }
 
 /**
+ * Optional convenience that bundles the local and remote projections into one named, unit-testable
+ * object. Equivalent to setting [LocalProjector] and [RemoteProjector] separately; both must be pure.
+ */
+interface SyncProjection<A : Any, R : Any, RID : Any, KEY : Any> {
+    fun local(local: A): LocalRecord<A, RID, KEY>
+
+    fun remote(remote: R): RemoteRecord<R, RID, KEY>
+}
+
+/**
  * The consumer's anti-corruption layer: produces new aggregate states for each executable
  * action. Implementations own aggregate invariants and field mapping. They are called inside the
  * transaction; for dry-run they are invoked only if documented pure.

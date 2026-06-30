@@ -70,6 +70,37 @@ data class SyncRegistration<RID : Any>(
             // NOTE: reason is carried by the decision/audit trail, not retained on the registration.
             version = version,
         )
+
+    companion object {
+        /**
+         * Build a registration from nullable aggregate fields, inferring the [lifecycle] unless one
+         * is given explicitly. Inference order: explicit override, then remotely-deleted (a
+         * [remotelyDeletedAt]), then linked (an active [remoteId]), then unlinked (only a
+         * [rememberedRemoteId]), else never-linked. [rememberedRemoteId] is NOT defaulted from
+         * [remoteId] — pass it explicitly to retain link history the aggregate actually stored.
+         */
+        fun <RID : Any> inferred(
+            remoteId: RID?,
+            rememberedRemoteId: RID? = null,
+            remotelyDeletedAt: Instant? = null,
+            changedAt: Instant? = remotelyDeletedAt,
+            version: VersionStamp? = null,
+            lifecycle: SyncRegistrationLifecycle? = null,
+        ): SyncRegistration<RID> =
+            SyncRegistration(
+                remoteId = remoteId,
+                rememberedRemoteId = rememberedRemoteId,
+                lifecycle =
+                    lifecycle ?: when {
+                        remotelyDeletedAt != null -> SyncRegistrationLifecycle.REMOTELY_DELETED
+                        remoteId != null -> SyncRegistrationLifecycle.LINKED
+                        rememberedRemoteId != null -> SyncRegistrationLifecycle.UNLINKED
+                        else -> SyncRegistrationLifecycle.NEVER_LINKED
+                    },
+                changedAt = changedAt,
+                version = version,
+            )
+    }
 }
 
 /** Coarse link state of a local aggregate relative to its remote counterpart. */
