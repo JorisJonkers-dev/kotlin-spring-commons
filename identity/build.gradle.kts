@@ -1,3 +1,5 @@
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.spring")
@@ -21,4 +23,12 @@ dependencies {
     testImplementation(libs.spring.security.web)
     testImplementation(libs.spring.test)
     testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+afterEvaluate {
+    tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+        violationRules {
+            rule { limit { counter = "LINE"; value = "COVEREDRATIO"; minimum = "1.00".toBigDecimal() } }
+        }
+    }
 }
