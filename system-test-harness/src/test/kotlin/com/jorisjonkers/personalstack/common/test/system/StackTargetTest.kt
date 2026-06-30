@@ -16,6 +16,13 @@ class StackTargetTest {
     }
 
     @Test
+    fun `resolves service URL when path is omitted`() {
+        val target = StackTarget(mapOf("api" to URI.create("https://api.example.test")))
+
+        assertThat(target.urlFor("api")).isEqualTo(URI.create("https://api.example.test"))
+    }
+
+    @Test
     fun `loads targets from properties and environment`() {
         val target =
             StackTarget.fromEnvironment(
@@ -42,6 +49,40 @@ class StackTargetTest {
     }
 
     @Test
+    fun `loads target list from default system properties`() =
+        withSystemProperty("test.targets", "api=https://api.example.test") {
+            val target = StackTarget.fromEnvironment()
+
+            assertThat(target.uriFor("api")).isEqualTo(URI.create("https://api.example.test"))
+        }
+
+    @Test
+    fun `exposes JvmStatic companion functions`() {
+        val parsed =
+            StackTarget::class.java
+                .getMethod("parse", String::class.java)
+                .invoke(null, "api=https://api.example.test") as StackTarget
+        val fromEnvironment =
+            StackTarget::class.java
+                .getMethod(
+                    "fromEnvironment",
+                    Set::class.java,
+                    String::class.java,
+                    Map::class.java,
+                    Map::class.java,
+                ).invoke(
+                    null,
+                    setOf("api"),
+                    "STACK_TARGETS",
+                    emptyMap<String, String>(),
+                    mapOf("STACK_TARGETS" to "api=https://api.example.test"),
+                ) as StackTarget
+
+        assertThat(parsed.uriFor("api")).isEqualTo(URI.create("https://api.example.test"))
+        assertThat(fromEnvironment.uriFor("api")).isEqualTo(URI.create("https://api.example.test"))
+    }
+
+    @Test
     fun `requires requested service targets`() {
         assertThatIllegalArgumentException()
             .isThrownBy {
@@ -63,5 +104,23 @@ class StackTargetTest {
     fun `throws clear error when service URL is missing`() {
         assertThatIllegalStateException()
             .isThrownBy { StackTarget(emptyMap()).uriFor("api") }
+    }
+
+    private fun withSystemProperty(
+        name: String,
+        value: String,
+        block: () -> Unit,
+    ) {
+        val previous = System.getProperty(name)
+        try {
+            System.setProperty(name, value)
+            block()
+        } finally {
+            if (previous == null) {
+                System.clearProperty(name)
+            } else {
+                System.setProperty(name, previous)
+            }
+        }
     }
 }
