@@ -7,6 +7,7 @@ import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
 import org.springdoc.core.customizers.OpenApiCustomizer
+import org.springframework.http.HttpStatus
 
 class OpenApiErrorSchemas(
     private val properties: WebUtilitiesProperties.ProblemDetailsProperties =
@@ -27,7 +28,7 @@ class OpenApiErrorSchemas(
             description("RFC 7807 problem document with optional validation errors.")
             addProperty("type", StringSchema().example("about:blank"))
             addProperty("title", StringSchema().example("Bad Request"))
-            addProperty("status", IntegerSchema().example(400))
+            addProperty("status", IntegerSchema().example(HttpStatus.BAD_REQUEST.value()))
             addProperty("detail", StringSchema().example("Validation failed for request."))
             addProperty("instance", StringSchema().example("/api/resource"))
             addProperty(

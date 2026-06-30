@@ -6,10 +6,15 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.ceil
 
+private const val DEFAULT_MAX_BUCKETS = 10_000
+private const val DEFAULT_BUCKET_IDLE_TTL_MINUTES = 30L
+private const val DEFAULT_CLEANUP_INTERVAL = 128
+private const val MILLIS_PER_SECOND = 1000.0
+
 class InMemoryRequestRateLimiter(
-    private val maxBuckets: Int = 10_000,
-    private val bucketIdleTtl: Duration = Duration.ofMinutes(30),
-    private val cleanupInterval: Int = 128,
+    private val maxBuckets: Int = DEFAULT_MAX_BUCKETS,
+    private val bucketIdleTtl: Duration = Duration.ofMinutes(DEFAULT_BUCKET_IDLE_TTL_MINUTES),
+    private val cleanupInterval: Int = DEFAULT_CLEANUP_INTERVAL,
 ) {
     data class Decision(
         val allowed: Boolean,
@@ -48,7 +53,7 @@ class InMemoryRequestRateLimiter(
             pruneExpiredTimestamps(bucket, now, windowMillis)
             if (bucket.timestamps.size >= maxRequests) {
                 val retryAfterMillis = (windowMillis - (now - bucket.timestamps.first())).coerceAtLeast(1)
-                return Decision(allowed = false, retryAfterSeconds = ceil(retryAfterMillis / 1000.0).toLong())
+                return Decision(allowed = false, retryAfterSeconds = retryAfterSeconds(retryAfterMillis))
             }
             bucket.timestamps.addLast(now)
             return Decision(allowed = true)
@@ -56,6 +61,8 @@ class InMemoryRequestRateLimiter(
     }
 
     internal fun trackedBucketCount(): Int = buckets.size
+
+    private fun retryAfterSeconds(retryAfterMillis: Long): Long = ceil(retryAfterMillis / MILLIS_PER_SECOND).toLong()
 
     private fun getOrCreateBucket(
         key: String,

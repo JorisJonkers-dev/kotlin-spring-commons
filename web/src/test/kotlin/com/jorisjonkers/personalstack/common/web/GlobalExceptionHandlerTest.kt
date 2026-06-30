@@ -11,8 +11,8 @@ import jakarta.validation.ConstraintViolationException
 import jakarta.validation.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.slf4j.MDC
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.http.HttpStatus

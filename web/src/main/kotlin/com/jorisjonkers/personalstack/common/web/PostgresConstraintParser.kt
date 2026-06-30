@@ -87,15 +87,9 @@ internal object PostgresConstraintParser {
         )
     }
 
-    private fun parseDetailLine(detail: String): Pair<String, String?>? {
-        DETAIL_FK_REGEX.find(detail)?.let {
-            return it.groupValues[1] to it.groupValues[2]
-        }
-        DETAIL_UNIQUE_REGEX.find(detail)?.let {
-            return it.groupValues[1] to null
-        }
-        return null
-    }
+    private fun parseDetailLine(detail: String): Pair<String, String?>? =
+        DETAIL_FK_REGEX.find(detail)?.let { it.groupValues[1] to it.groupValues[2] }
+            ?: DETAIL_UNIQUE_REGEX.find(detail)?.let { it.groupValues[1] to null }
 
     /**
      * Find the first exception in the cause chain that *structurally*
@@ -110,7 +104,10 @@ internal object PostgresConstraintParser {
     private fun walkCauseChain(ex: Throwable): Throwable? {
         var current: Throwable? = ex
         repeat(MAX_CAUSE_DEPTH) {
-            val frame = current ?: return null
+            val frame = current
+            if (frame == null) {
+                return@repeat
+            }
             if (looksLikePsqlException(frame)) return frame
             current = frame.cause
         }
