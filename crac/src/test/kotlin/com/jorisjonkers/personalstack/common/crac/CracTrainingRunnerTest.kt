@@ -5,7 +5,14 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.boot.SpringApplication
+import org.springframework.boot.context.event.ApplicationReadyEvent
+import org.springframework.boot.web.server.WebServer
+import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.springframework.boot.web.server.context.WebServerInitializedEvent
+import org.springframework.context.support.GenericApplicationContext
 import java.net.InetSocketAddress
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -137,5 +144,49 @@ class CracTrainingRunnerTest {
 
         assertThat(hits).isEmpty()
         assertThat(checkpoints.get()).isZero()
+    }
+
+    @Test
+    fun `application ready event warms resolved web server port`() {
+        val checkpoints = AtomicInteger()
+        val runner =
+            CracTrainingRunner(
+                properties =
+                    CracTrainingProperties(
+                        enabled = true,
+                        endpoints = listOf("/foo"),
+                        iterations = 4,
+                    ),
+                checkpointInvoker = { checkpoints.incrementAndGet() },
+            )
+
+        runner.onWebServerInitialized(TestWebServerInitializedEvent(port))
+        runner.onApplicationEvent(
+            ApplicationReadyEvent(
+                SpringApplication(),
+                emptyArray(),
+                GenericApplicationContext(),
+                Duration.ZERO,
+            ),
+        )
+
+        assertThat(hits["/foo"]?.get()).isEqualTo(4)
+        assertThat(checkpoints.get()).isEqualTo(1)
+    }
+
+    private class TestWebServerInitializedEvent(
+        port: Int,
+    ) : WebServerInitializedEvent(TestWebServer(port)) {
+        override fun getApplicationContext(): WebServerApplicationContext = throw UnsupportedOperationException()
+    }
+
+    private class TestWebServer(
+        private val serverPort: Int,
+    ) : WebServer {
+        override fun start() = Unit
+
+        override fun stop() = Unit
+
+        override fun getPort(): Int = serverPort
     }
 }
