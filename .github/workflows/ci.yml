@@ -51,6 +51,8 @@ jobs:
       lint-gradle-args: 'build'
       test-gradle-args: 'test'
     secrets:
+      # Reads the public dev.jorisjonkers convention plugins from the gradle-conventions
+      # GitHub Packages registry; the default workflow token can read public org packages.
       packages-token: ${{ secrets.GITHUB_TOKEN }}
 
   pipeline-complete:

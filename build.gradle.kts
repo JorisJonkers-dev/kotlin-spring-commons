@@ -1,15 +1,13 @@
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
-import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.spring) apply false
+    alias(libs.plugins.jorisjonkers.testing) apply false
 }
 
 allprojects {
@@ -27,7 +25,10 @@ allprojects {
 
 subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
-        apply(plugin = "jacoco")
+        // Shared testing conventions from the dev.jorisjonkers gradle commons: jacoco, test
+        // logging, an integration-test source set and coverage verification (LINE >= 0.80 by
+        // default; raised per module via the `extratoastTesting` extension where needed).
+        apply(plugin = "dev.jorisjonkers.testing")
 
         extensions.configure<JavaPluginExtension> {
             toolchain {
@@ -41,37 +42,6 @@ subprojects {
             compilerOptions {
                 jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
             }
-        }
-
-        tasks.withType<Test>().configureEach {
-            useJUnitPlatform()
-            jvmArgs("-Xshare:off")
-            finalizedBy(tasks.named("jacocoTestReport"))
-        }
-
-        tasks.named<JacocoReport>("jacocoTestReport") {
-            dependsOn(tasks.named("test"))
-            reports {
-                xml.required.set(true)
-                html.required.set(true)
-            }
-        }
-
-        tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
-            dependsOn(tasks.named("test"))
-            violationRules {
-                rule {
-                    limit {
-                        counter = "LINE"
-                        value = "COVEREDRATIO"
-                        minimum = "0.80".toBigDecimal()
-                    }
-                }
-            }
-        }
-
-        tasks.named("check") {
-            dependsOn(tasks.named("jacocoTestCoverageVerification"))
         }
     }
 

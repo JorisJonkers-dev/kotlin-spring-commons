@@ -1,5 +1,6 @@
 [versions]
 aspectj = "1.9.25.1"
+gradle-conventions = "0.5.6"
 assertj = "3.27.7"
 archunit = "1.4.2"
 crac = "1.5.0"
@@ -9,8 +10,10 @@ junit-jupiter = "6.1.0"
 jakarta-servlet = "6.1.0"
 jakarta-mail = "2.0.5"
 kotlin = "2.3.21"
+micrometer = "1.15.0"
 mockk = "1.14.9"
 nimbus-jose-jwt = "10.9"
+resilience4j = "2.3.0"
 opentelemetry = "1.62.0"
 playwright = "1.60.0"
 rest-assured = "6.0.0"
@@ -33,7 +36,10 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "jun
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 jakarta-servlet-api = { module = "jakarta.servlet:jakarta.servlet-api", version.ref = "jakarta-servlet" }
 jakarta-mail-angus = { module = "org.eclipse.angus:jakarta.mail", version.ref = "jakarta-mail" }
+micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
+resilience4j-retry = { module = "io.github.resilience4j:resilience4j-retry", version.ref = "resilience4j" }
 nimbus-jose-jwt = { module = "com.nimbusds:nimbus-jose-jwt", version.ref = "nimbus-jose-jwt" }
 opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing", version.ref = "opentelemetry" }
@@ -62,3 +68,4 @@ testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-jun
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+jorisjonkers-testing = { id = "dev.jorisjonkers.testing", version.ref = "gradle-conventions" }
