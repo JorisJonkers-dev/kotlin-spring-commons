@@ -26,6 +26,8 @@ include(
     ":identity",
     ":messaging",
     ":observability",
+    ":sync-core",
+    ":sync-spring",
     ":system-test-harness",
     ":test-support",
     ":timing",

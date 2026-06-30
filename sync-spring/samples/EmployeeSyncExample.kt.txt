@@ -1,0 +1,399 @@
+package com.example.hr.sync
+
+import com.jorisjonkers.personalstack.common.sync.application.port.`in`.SpawnSyncUseCase
+import com.jorisjonkers.personalstack.common.sync.application.port.`in`.SyncEntityUseCase
+import com.jorisjonkers.personalstack.common.sync.application.port.`in`.SyncListUseCase
+import com.jorisjonkers.personalstack.common.sync.application.service.SyncUseCaseFactory
+import com.jorisjonkers.personalstack.common.sync.domain.ChangeSet
+import com.jorisjonkers.personalstack.common.sync.domain.ConflictPolicy
+import com.jorisjonkers.personalstack.common.sync.domain.FieldChange
+import com.jorisjonkers.personalstack.common.sync.domain.FieldPath
+import com.jorisjonkers.personalstack.common.sync.domain.Fingerprint
+import com.jorisjonkers.personalstack.common.sync.domain.ImportPolicy
+import com.jorisjonkers.personalstack.common.sync.domain.ListTransactionMode
+import com.jorisjonkers.personalstack.common.sync.domain.LocalId
+import com.jorisjonkers.personalstack.common.sync.domain.LocalRecord
+import com.jorisjonkers.personalstack.common.sync.domain.MatchConfidence
+import com.jorisjonkers.personalstack.common.sync.domain.MissingRemotePolicy
+import com.jorisjonkers.personalstack.common.sync.domain.Redaction
+import com.jorisjonkers.personalstack.common.sync.domain.RemoteDeleteSignal
+import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecord
+import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecordLifecycle
+import com.jorisjonkers.personalstack.common.sync.domain.SyncContext
+import com.jorisjonkers.personalstack.common.sync.domain.SyncDecision
+import com.jorisjonkers.personalstack.common.sync.domain.SyncDefinition
+import com.jorisjonkers.personalstack.common.sync.domain.SyncMapper
+import com.jorisjonkers.personalstack.common.sync.domain.SyncRegistration
+import com.jorisjonkers.personalstack.common.sync.domain.SyncRegistrationLifecycle
+import com.jorisjonkers.personalstack.common.sync.domain.UnlinkReason
+import com.jorisjonkers.personalstack.common.sync.domain.VersionStamp
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.AuditTrail
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.IdempotencyStore
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.LocalSyncRepository
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.LockManager
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.RemoteCatalog
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncCheckpointStore
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncEffectOutbox
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncObserver
+import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncUnitOfWork
+import com.jorisjonkers.personalstack.common.sync.domain.syncResource
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import java.time.Instant
+
+// ---------------------------------------------------------------------------
+// Consumer domain types
+// ---------------------------------------------------------------------------
+
+@JvmInline
+value class EmployeeId(val value: String)
+
+@JvmInline
+value class HrEmployeeId(val value: String)
+
+@JvmInline
+value class DepartmentId(val value: String)
+
+/**
+ * The consumer's matching key vocabulary. The framework treats KEY as an opaque
+ * `Any` it can compare for equality across local and remote projections, so a
+ * sealed hierarchy keeps email/payroll/remote-id keys from colliding.
+ */
+sealed interface EmployeeSyncKey {
+    data class Remote(val id: HrEmployeeId) : EmployeeSyncKey
+
+    data class Email(val normalized: String) : EmployeeSyncKey
+
+    data class PayrollNumber(val normalized: String) : EmployeeSyncKey
+}
+
+/** The locally persisted aggregate. */
+data class Employee(
+    val id: EmployeeId,
+    val remoteId: HrEmployeeId?,
+    val rememberedRemoteId: HrEmployeeId?,
+    val email: String,
+    val payrollNumber: String?,
+    val displayName: String,
+    val active: Boolean,
+    val remoteDeletedAt: Instant?,
+    val version: Long,
+)
+
+/** The remote (HR system) representation. */
+data class HrEmployeeDto(
+    val id: HrEmployeeId,
+    val email: String,
+    val payrollNumber: String?,
+    val displayName: String,
+    val active: Boolean,
+    val deleted: Boolean,
+    val updatedAt: Instant,
+)
+
+// ---------------------------------------------------------------------------
+// Consumer-owned ports (anti-corruption boundary)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persistence port — implemented by the consumer's jOOQ/JPA repository in
+ * infrastructure. Must include soft-deleted/unlinked rows so RESTORE and RELINK
+ * are possible.
+ */
+interface EmployeeSyncRepository :
+    LocalSyncRepository<Employee, HrEmployeeId, DepartmentId>
+
+/**
+ * Remote integration port — implemented by the consumer's HTTP client adapter.
+ * Returns the Found/Missing/Failed/Partial algebra; a remote outage must never
+ * be represented as `null` or a thrown exception that the framework reads as
+ * "absent".
+ */
+interface HrEmployeeCatalog :
+    RemoteCatalog<HrEmployeeDto, HrEmployeeId, EmployeeSyncKey, DepartmentId>
+
+// ---------------------------------------------------------------------------
+// Differ — pure field comparison producing a redacted ChangeSet
+// ---------------------------------------------------------------------------
+
+object EmployeeDiffer {
+    fun diff(local: Employee, remote: HrEmployeeDto): ChangeSet {
+        val changes = buildSet {
+            comparePlain("email", local.email, remote.email)?.let(::add)
+            comparePlain("displayName", local.displayName, remote.displayName)?.let(::add)
+            comparePlain("payrollNumber", local.payrollNumber, remote.payrollNumber)?.let(::add)
+            comparePlain("active", local.active.toString(), remote.active.toString())?.let(::add)
+        }
+        return ChangeSet(changes)
+    }
+
+    private fun comparePlain(path: String, local: String?, remote: String?): FieldChange? {
+        if (local == remote) return null
+        return FieldChange(
+            path = FieldPath(path),
+            local = local?.let(::Fingerprint),
+            remote = remote?.let(::Fingerprint),
+            // NOTE: HR identity fields are non-sensitive here, so they are recorded in plain
+            // text for auditability. Switch to Redaction.REDACTED for sensitive fields.
+            redaction = Redaction.PLAIN,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mapper — translates remote records into aggregate mutations (the ACL)
+// ---------------------------------------------------------------------------
+
+object EmployeeMapper : SyncMapper<Employee, HrEmployeeDto, DepartmentId> {
+    override fun create(remote: HrEmployeeDto, context: SyncContext<DepartmentId>): Employee =
+        Employee(
+            id = EmployeeId(java.util.UUID.randomUUID().toString()),
+            remoteId = remote.id,
+            rememberedRemoteId = remote.id,
+            email = remote.email,
+            payrollNumber = remote.payrollNumber,
+            displayName = remote.displayName,
+            active = remote.active,
+            remoteDeletedAt = null,
+            version = 0L,
+        )
+
+    override fun update(
+        local: Employee,
+        remote: HrEmployeeDto,
+        changes: ChangeSet,
+        context: SyncContext<DepartmentId>,
+    ): Employee =
+        local.copy(
+            email = remote.email,
+            payrollNumber = remote.payrollNumber,
+            displayName = remote.displayName,
+            active = remote.active,
+            remoteDeletedAt = null,
+            version = local.version + 1,
+        )
+
+    override fun restore(
+        local: Employee,
+        remote: HrEmployeeDto,
+        changes: ChangeSet,
+        context: SyncContext<DepartmentId>,
+    ): Employee =
+        local.copy(
+            remoteId = remote.id,
+            rememberedRemoteId = remote.id,
+            email = remote.email,
+            payrollNumber = remote.payrollNumber,
+            displayName = remote.displayName,
+            active = remote.active,
+            remoteDeletedAt = null,
+            version = local.version + 1,
+        )
+
+    override fun relink(
+        local: Employee,
+        remote: HrEmployeeDto,
+        changes: ChangeSet,
+        context: SyncContext<DepartmentId>,
+    ): Employee =
+        local.copy(
+            remoteId = remote.id,
+            rememberedRemoteId = remote.id,
+            email = remote.email,
+            payrollNumber = remote.payrollNumber,
+            displayName = remote.displayName,
+            active = remote.active,
+            remoteDeletedAt = null,
+            version = local.version + 1,
+        )
+
+    override fun delete(
+        local: Employee,
+        signal: RemoteDeleteSignal<*>,
+        context: SyncContext<DepartmentId>,
+    ): Employee =
+        local.copy(
+            active = false,
+            remoteDeletedAt = context.startedAt,
+            version = local.version + 1,
+        )
+
+    override fun unlink(
+        local: Employee,
+        reason: UnlinkReason,
+        context: SyncContext<DepartmentId>,
+    ): Employee =
+        local.copy(
+            // Remember the remote id so a later RELINK can find this record.
+            rememberedRemoteId = local.remoteId ?: local.rememberedRemoteId,
+            remoteId = null,
+            version = local.version + 1,
+        )
+}
+
+// ---------------------------------------------------------------------------
+// Spring wiring: one SyncDefinition bean + the typed use cases
+// ---------------------------------------------------------------------------
+
+@Configuration
+class EmployeeSyncConfiguration {
+    @Bean
+    fun employeeSyncDefinition(
+        employeeRepository: EmployeeSyncRepository,
+        hrCatalog: HrEmployeeCatalog,
+        lockManager: LockManager,
+        unitOfWork: SyncUnitOfWork,
+        outbox: SyncEffectOutbox,
+        auditTrail: AuditTrail,
+        observer: SyncObserver,
+        idempotency: IdempotencyStore,
+        checkpoints: SyncCheckpointStore,
+    ): SyncDefinition<Employee, HrEmployeeDto, HrEmployeeId, EmployeeSyncKey, DepartmentId> =
+        syncResource("employee") {
+            localRepository(employeeRepository)
+            remoteCatalog(hrCatalog)
+            lockManager(lockManager)
+            unitOfWork(unitOfWork)
+            effectOutbox(outbox)
+            auditTrail(auditTrail)
+            observer(observer)
+            idempotencyStore(idempotency)
+            checkpointStore(checkpoints)
+
+            localProjector { employee ->
+                LocalRecord(
+                    aggregate = employee,
+                    localId = LocalId(employee.id.value),
+                    registration =
+                        SyncRegistration(
+                            remoteId = employee.remoteId,
+                            rememberedRemoteId = employee.rememberedRemoteId,
+                            lifecycle =
+                                when {
+                                    employee.remoteDeletedAt != null -> SyncRegistrationLifecycle.REMOTELY_DELETED
+                                    employee.remoteId != null -> SyncRegistrationLifecycle.LINKED
+                                    employee.rememberedRemoteId != null -> SyncRegistrationLifecycle.UNLINKED
+                                    else -> SyncRegistrationLifecycle.NEVER_LINKED
+                                },
+                            changedAt = employee.remoteDeletedAt,
+                            version = VersionStamp.Number(employee.version),
+                        ),
+                    keys =
+                        buildSet {
+                            employee.remoteId?.let { add(EmployeeSyncKey.Remote(it)) }
+                            add(EmployeeSyncKey.Email(employee.email.trim().lowercase()))
+                            employee.payrollNumber?.let { add(EmployeeSyncKey.PayrollNumber(it.trim().lowercase())) }
+                        },
+                )
+            }
+
+            remoteProjector { remote ->
+                RemoteRecord(
+                    record = remote,
+                    externalId = remote.id,
+                    keys =
+                        buildSet {
+                            add(EmployeeSyncKey.Remote(remote.id))
+                            add(EmployeeSyncKey.Email(remote.email.trim().lowercase()))
+                            remote.payrollNumber?.let { add(EmployeeSyncKey.PayrollNumber(it.trim().lowercase())) }
+                        },
+                    lifecycle =
+                        if (remote.deleted) {
+                            RemoteRecordLifecycle.DELETED
+                        } else {
+                            RemoteRecordLifecycle.ACTIVE
+                        },
+                    importable = remote.active || !remote.deleted,
+                    version = VersionStamp.Timestamp(remote.updatedAt),
+                    observedAt = Instant.now(),
+                )
+            }
+
+            differ(EmployeeDiffer::diff)
+            mapper(EmployeeMapper)
+
+            matching {
+                pass(
+                    name = "remote-id",
+                    confidence = MatchConfidence.HARD,
+                    localKeys = { local ->
+                        local.registration.remoteId?.let { setOf(EmployeeSyncKey.Remote(it)) } ?: emptySet()
+                    },
+                    remoteKeys = { remote -> setOf(EmployeeSyncKey.Remote(remote.externalId)) },
+                )
+                pass(
+                    name = "remembered-remote-id",
+                    confidence = MatchConfidence.REMEMBERED_REMOTE_ID,
+                    localKeys = {
+                        it.registration.rememberedRemoteId
+                            ?.let { remembered -> setOf(EmployeeSyncKey.Remote(remembered)) }
+                            ?: emptySet()
+                    },
+                    remoteKeys = { remote -> setOf(EmployeeSyncKey.Remote(remote.externalId)) },
+                )
+                pass(
+                    name = "email",
+                    confidence = MatchConfidence.NATURAL_KEY,
+                    localKeys = { local -> local.keys.filterIsInstance<EmployeeSyncKey.Email>().toSet() },
+                    remoteKeys = { remote -> remote.keys.filterIsInstance<EmployeeSyncKey.Email>().toSet() },
+                )
+                pass(
+                    name = "payroll-number",
+                    confidence = MatchConfidence.NATURAL_KEY,
+                    localKeys = { local -> local.keys.filterIsInstance<EmployeeSyncKey.PayrollNumber>().toSet() },
+                    remoteKeys = { remote -> remote.keys.filterIsInstance<EmployeeSyncKey.PayrollNumber>().toSet() },
+                )
+            }
+
+            policies {
+                conflictPolicy(ConflictPolicy.failClosed())
+                importPolicy(ImportPolicy { remote -> remote.active && !remote.deleted })
+                missingRemotePolicy(
+                    MissingRemotePolicy { local, observedAt ->
+                        val remoteId = local.registration.remoteId
+                        if (remoteId == null) {
+                            SyncDecision.Unlink(
+                                local = local,
+                                unlinkReason =
+                                    UnlinkReason.Policy(
+                                        "local has no active remote id in authoritative employee list",
+                                    ),
+                            )
+                        } else {
+                            SyncDecision.Delete(
+                                local = local,
+                                signal =
+                                    RemoteDeleteSignal.MissingFromAuthoritativeList(
+                                        remoteId = remoteId,
+                                        observedAt = observedAt,
+                                    ),
+                            )
+                        }
+                    },
+                )
+            }
+
+            execution {
+                listTransactionMode = ListTransactionMode.PER_RECORD
+                pageSize = 500
+            }
+        }
+
+    @Bean
+    fun employeeSyncUseCases(
+        factory: SyncUseCaseFactory,
+        definition: SyncDefinition<Employee, HrEmployeeDto, HrEmployeeId, EmployeeSyncKey, DepartmentId>,
+    ): EmployeeSyncUseCases =
+        EmployeeSyncUseCases(
+            entity = factory.entity(definition),
+            list = factory.list(definition),
+            spawn = factory.spawn(definition),
+        )
+}
+
+/** Convenience bundle of the three typed use cases for this resource. */
+data class EmployeeSyncUseCases(
+    val entity: SyncEntityUseCase<HrEmployeeId>,
+    val list: SyncListUseCase<DepartmentId>,
+    val spawn: SpawnSyncUseCase<DepartmentId>,
+)
