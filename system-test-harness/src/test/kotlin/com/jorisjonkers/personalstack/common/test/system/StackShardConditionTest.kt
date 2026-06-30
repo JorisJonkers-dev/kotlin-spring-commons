@@ -51,8 +51,7 @@ class StackShardConditionTest {
                         "test.shard.count" to "2",
                     ),
                 )
-            }
-            .withMessage("test.shard.index must be an integer, got 'one'")
+            }.withMessage("test.shard.index must be an integer, got 'one'")
 
         assertThatIllegalStateException()
             .isThrownBy {
@@ -62,8 +61,7 @@ class StackShardConditionTest {
                         "test.shard.count" to "many",
                     ),
                 )
-            }
-            .withMessage("test.shard.count must be an integer, got 'many'")
+            }.withMessage("test.shard.count must be an integer, got 'many'")
     }
 
     @Test
@@ -76,8 +74,7 @@ class StackShardConditionTest {
                         "test.shard.count" to "0",
                     ),
                 )
-            }
-            .withMessage("test.shard.count must be greater than 0")
+            }.withMessage("test.shard.count must be greater than 0")
 
         assertThatIllegalArgumentException()
             .isThrownBy {
@@ -87,8 +84,7 @@ class StackShardConditionTest {
                         "test.shard.count" to "2",
                     ),
                 )
-            }
-            .withMessage("test.shard.index must be between 1 and 2, got 3")
+            }.withMessage("test.shard.index must be between 1 and 2, got 3")
     }
 
     @Test
@@ -135,7 +131,10 @@ class StackShardConditionTest {
     @Test
     fun `enables execution when sharding is disabled`() =
         withShardProperties(index = null, count = null) {
-            val result = StackShardCondition().evaluateExecutionCondition(extensionContextFor(StackShardConditionTest::class.java))
+            val result =
+                StackShardCondition().evaluateExecutionCondition(
+                    extensionContextFor(StackShardConditionTest::class.java),
+                )
 
             assertThat(result.isDisabled).isFalse()
             assertThat(result.reason).hasValue("sharding disabled")
@@ -158,13 +157,19 @@ class StackShardConditionTest {
         val nonOwningShard = if (owningShard == shardCount) 1 else owningShard + 1
 
         withShardProperties(index = owningShard.toString(), count = shardCount.toString()) {
-            val result = StackShardCondition().evaluateExecutionCondition(extensionContextFor(StackShardConditionTest::class.java))
+            val result =
+                StackShardCondition().evaluateExecutionCondition(
+                    extensionContextFor(StackShardConditionTest::class.java),
+                )
 
             assertThat(result.isDisabled).isFalse()
             assertThat(result.reason).hasValue("shard $owningShard/$shardCount owns $fqcn")
         }
         withShardProperties(index = nonOwningShard.toString(), count = shardCount.toString()) {
-            val result = StackShardCondition().evaluateExecutionCondition(extensionContextFor(StackShardConditionTest::class.java))
+            val result =
+                StackShardCondition().evaluateExecutionCondition(
+                    extensionContextFor(StackShardConditionTest::class.java),
+                )
 
             assertThat(result.isDisabled).isTrue()
             assertThat(result.reason).hasValue("shard $nonOwningShard/$shardCount does not own $fqcn")

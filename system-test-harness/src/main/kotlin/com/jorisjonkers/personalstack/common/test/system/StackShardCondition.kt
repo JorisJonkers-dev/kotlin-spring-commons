@@ -6,13 +6,15 @@ import org.junit.jupiter.api.extension.ExtensionContext
 
 class StackShardCondition : ExecutionCondition {
     override fun evaluateExecutionCondition(context: ExtensionContext): ConditionEvaluationResult {
-        val shard = StackTestShard.fromEnvironment() ?: return ConditionEvaluationResult.enabled("sharding disabled")
-        val testClass = context.testClass.orElse(null) ?: return ConditionEvaluationResult.enabled("no test class")
-
-        return if (owns(testClass.name, shard.index, shard.count)) {
-            ConditionEvaluationResult.enabled("shard ${shard.index}/${shard.count} owns ${testClass.name}")
-        } else {
-            ConditionEvaluationResult.disabled("shard ${shard.index}/${shard.count} does not own ${testClass.name}")
+        val shard = StackTestShard.fromEnvironment()
+        val testClass = context.testClass.orElse(null)
+        return when {
+            shard == null -> ConditionEvaluationResult.enabled("sharding disabled")
+            testClass == null -> ConditionEvaluationResult.enabled("no test class")
+            owns(testClass.name, shard.index, shard.count) ->
+                ConditionEvaluationResult.enabled("shard ${shard.index}/${shard.count} owns ${testClass.name}")
+            else ->
+                ConditionEvaluationResult.disabled("shard ${shard.index}/${shard.count} does not own ${testClass.name}")
         }
     }
 
@@ -36,9 +38,7 @@ data class StackTestShard(
 ) {
     companion object {
         @JvmStatic
-        fun fromEnvironment(
-            properties: Map<String, String> = systemProperties(),
-        ): StackTestShard? {
+        fun fromEnvironment(properties: Map<String, String> = systemProperties()): StackTestShard? {
             val indexValue = properties["test.shard.index"]?.trim()
             val countValue = properties["test.shard.count"]?.trim()
 

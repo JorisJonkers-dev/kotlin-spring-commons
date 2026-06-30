@@ -18,7 +18,10 @@ class ContainerImagesTest {
         assertThat(
             images
                 .imageNameFor("database", "postgres")
-                .isCompatibleWith(org.testcontainers.utility.DockerImageName.parse("postgres")),
+                .isCompatibleWith(
+                    org.testcontainers.utility.DockerImageName
+                        .parse("postgres"),
+                ),
         ).isTrue()
     }
 }

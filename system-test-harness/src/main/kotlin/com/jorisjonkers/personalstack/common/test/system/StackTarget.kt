@@ -5,8 +5,7 @@ import java.net.URI
 data class StackTarget(
     val services: Map<String, URI>,
 ) {
-    fun uriFor(service: String): URI =
-        services[service] ?: error("No target URL configured for service: $service")
+    fun uriFor(service: String): URI = services[service] ?: error("No target URL configured for service: $service")
 
     fun urlFor(
         service: String,
