@@ -68,4 +68,6 @@ testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-jun
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+jorisjonkers-detekt = { id = "dev.jorisjonkers.detekt", version.ref = "gradle-conventions" }
+jorisjonkers-ktlint = { id = "dev.jorisjonkers.ktlint", version.ref = "gradle-conventions" }
 jorisjonkers-testing = { id = "dev.jorisjonkers.testing", version.ref = "gradle-conventions" }

@@ -7,6 +7,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.spring) apply false
+    alias(libs.plugins.jorisjonkers.detekt) apply false
+    alias(libs.plugins.jorisjonkers.ktlint) apply false
     alias(libs.plugins.jorisjonkers.testing) apply false
 }
 
@@ -28,6 +30,8 @@ subprojects {
         // Shared testing conventions from the dev.jorisjonkers gradle commons: jacoco, test
         // logging, an integration-test source set and coverage verification (LINE >= 0.80 by
         // default; raised per module via the `extratoastTesting` extension where needed).
+        apply(plugin = "dev.jorisjonkers.detekt")
+        apply(plugin = "dev.jorisjonkers.ktlint")
         apply(plugin = "dev.jorisjonkers.testing")
 
         extensions.configure<JavaPluginExtension> {
