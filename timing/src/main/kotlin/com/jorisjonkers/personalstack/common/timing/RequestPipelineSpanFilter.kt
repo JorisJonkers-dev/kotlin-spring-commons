@@ -44,7 +44,7 @@ import java.time.Instant
  * available, so 401 short-circuits inside Spring Security skip the
  * later spans gracefully.
  */
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@Order(Ordered.HIGHEST_PRECEDENCE + REQUEST_PIPELINE_FILTER_ORDER_OFFSET)
 class RequestPipelineSpanFilter(
     private val tracer: Tracer,
 ) : OncePerRequestFilter() {
@@ -146,5 +146,6 @@ class RequestPipelineSpanFilter(
         private const val HANDLER_MAPPING_BEST_MATCHING_PATTERN_ATTRIBUTE =
             "org.springframework.web.servlet.HandlerMapping.bestMatchingPattern"
         private const val MAX_ATTRS = 4
+        private const val REQUEST_PIPELINE_FILTER_ORDER_OFFSET = 10
     }
 }
