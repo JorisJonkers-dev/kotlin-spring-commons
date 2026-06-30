@@ -111,14 +111,16 @@ class StalwartMailClient(
         return DeliveredEmail(subject = subject ?: "", recipients = to, body = body)
     }
 
-    private fun extractText(multipart: MimeMultipart): String? {
+    private fun extractText(multipart: MimeMultipart): String? =
+        findTextPart(multipart, "text/plain") ?: findTextPart(multipart, "text/html")
+
+    private fun findTextPart(
+        multipart: MimeMultipart,
+        mimeType: String,
+    ): String? {
         for (i in 0 until multipart.count) {
             val part = multipart.getBodyPart(i)
-            if (part.isMimeType("text/plain")) return part.content?.toString()
-        }
-        for (i in 0 until multipart.count) {
-            val part = multipart.getBodyPart(i)
-            if (part.isMimeType("text/html")) return part.content?.toString()
+            if (part.isMimeType(mimeType)) return part.content?.toString()
         }
         return null
     }

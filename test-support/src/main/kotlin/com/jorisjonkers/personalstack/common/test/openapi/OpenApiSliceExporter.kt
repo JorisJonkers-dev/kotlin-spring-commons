@@ -61,16 +61,7 @@ object OpenApiSliceExporter {
     ): String {
         val normalizedPath = normalizeDocsPath(docsPath)
         return try {
-            val result =
-                mockMvc
-                    .perform(get(normalizedPath).accept(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk)
-                    .andReturn()
-            val content = result.response.contentAsString
-            if (content.isBlank()) {
-                throw OpenApiExportException("springdoc returned an empty OpenAPI response from '$normalizedPath'")
-            }
-            content
+            fetchJsonContent(mockMvc, normalizedPath)
         } catch (ex: OpenApiExportException) {
             throw ex
         } catch (ex: Throwable) {
@@ -81,6 +72,22 @@ object OpenApiSliceExporter {
                 ex,
             )
         }
+    }
+
+    private fun fetchJsonContent(
+        mockMvc: MockMvc,
+        normalizedPath: String,
+    ): String {
+        val result =
+            mockMvc
+                .perform(get(normalizedPath).accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk)
+                .andReturn()
+        val content = result.response.contentAsString
+        if (content.isBlank()) {
+            throw OpenApiExportException("springdoc returned an empty OpenAPI response from '$normalizedPath'")
+        }
+        return content
     }
 
     private fun normalizeJson(
