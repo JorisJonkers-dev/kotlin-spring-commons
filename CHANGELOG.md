@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.8.0...v0.9.0) (2026-06-30)
+
+
+### Features
+
+* **sync:** generic hexagonal sync framework (sync-core + sync-spring) ([#10](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/10)) ([b81797b](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/b81797b2dc3e876132421f6e42a1656c7c16fcf3))
+
 ## [0.8.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.7.1...v0.8.0) (2026-06-29)
 
 
