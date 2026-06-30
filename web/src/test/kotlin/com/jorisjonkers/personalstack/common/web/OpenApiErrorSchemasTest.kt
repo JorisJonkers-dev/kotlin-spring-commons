@@ -6,6 +6,15 @@ import org.junit.jupiter.api.Test
 
 class OpenApiErrorSchemasTest {
     @Test
+    fun `registers default problem detail schemas`() {
+        val openApi = OpenAPI()
+
+        OpenApiErrorSchemas().customise(openApi)
+
+        assertThat(openApi.components.schemas).containsKeys("ApiError", "FieldValidationError")
+    }
+
+    @Test
     fun `registers configurable problem detail schemas`() {
         val openApi = OpenAPI()
         OpenApiErrorSchemas(

@@ -16,4 +16,13 @@ class CsrfTokenControllerTest {
 
         assertThat(body).containsEntry("csrfToken", "raw-token")
     }
+
+    @Test
+    fun `returns csrf token under default field name`() {
+        val controller = CsrfTokenController()
+
+        val body = controller.csrf(DefaultCsrfToken("X-XSRF-TOKEN", "_csrf", "raw-token"))
+
+        assertThat(body).containsEntry("token", "raw-token")
+    }
 }

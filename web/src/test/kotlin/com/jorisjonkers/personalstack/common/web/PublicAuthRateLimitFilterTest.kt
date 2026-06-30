@@ -76,6 +76,37 @@ class PublicAuthRateLimitFilterTest {
         assertThat(filter.resolveClientIp(request)).isEqualTo("203.0.113.10")
     }
 
+    @Test
+    fun `resolves first valid forwarded address from trusted proxy`() {
+        val filter =
+            PublicAuthRateLimitFilter(
+                InMemoryRequestRateLimiter(cleanupInterval = 1),
+                rules,
+                trustedProxyCidrs = listOf(" ", "not-a-cidr", "127.0.0.1/32"),
+            )
+        val request =
+            MockHttpServletRequest("POST", "/auth/login").apply {
+                servletPath = "/auth/login"
+                remoteAddr = "127.0.0.1"
+                addHeader("X-Forwarded-For", "not-an-ip, 198.51.100.20:8443, 203.0.113.21")
+            }
+
+        assertThat(filter.resolveClientIp(request)).isEqualTo("198.51.100.20")
+    }
+
+    @Test
+    fun `normalizes bracketed ipv6 x real ip from trusted proxy`() {
+        val filter = PublicAuthRateLimitFilter(InMemoryRequestRateLimiter(cleanupInterval = 1), rules)
+        val request =
+            MockHttpServletRequest("POST", "/auth/login").apply {
+                servletPath = "/auth/login"
+                remoteAddr = "127.0.0.1"
+                addHeader("X-Real-IP", "[2001:DB8::1]:8443")
+            }
+
+        assertThat(filter.resolveClientIp(request)).isEqualTo("2001:db8::1")
+    }
+
     private fun invoke(
         filter: PublicAuthRateLimitFilter,
         method: String,

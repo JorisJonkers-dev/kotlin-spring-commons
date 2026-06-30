@@ -1,5 +1,7 @@
 package com.jorisjonkers.personalstack.common.web
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
 import com.jorisjonkers.personalstack.common.exception.DomainException
 import com.jorisjonkers.personalstack.common.exception.NotFoundException
 import io.mockk.every
@@ -10,6 +12,7 @@ import jakarta.validation.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.slf4j.MDC
+import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.http.HttpStatus
@@ -112,6 +115,21 @@ class GlobalExceptionHandlerTest {
         assertThat(body.status).isEqualTo(400)
         assertThat(body.title).isEqualTo("Bad Request")
         assertThat(body.detail).isEqualTo("workspaceId must be set")
+    }
+
+    @Test
+    fun `client errors are logged with context when debug is enabled`() {
+        val logger = LoggerFactory.getLogger(GlobalExceptionHandler::class.java) as Logger
+        val previousLevel = logger.level
+        logger.level = Level.DEBUG
+        try {
+            val response = handler.handleIllegalArgument(IllegalArgumentException("bad input"), webRequest("/debug"))
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+            assertThat(response.body!!.instance).isEqualTo(URI.create("/debug"))
+        } finally {
+            logger.level = previousLevel
+        }
     }
 
     @Test

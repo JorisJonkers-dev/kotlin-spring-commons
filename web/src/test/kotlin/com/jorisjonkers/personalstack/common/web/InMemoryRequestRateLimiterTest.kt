@@ -27,4 +27,34 @@ class InMemoryRequestRateLimiterTest {
 
         assertThat(limiter.trackedBucketCount()).isLessThanOrEqualTo(3)
     }
+
+    @Test
+    fun `skips cleanup until configured interval`() {
+        val limiter =
+            InMemoryRequestRateLimiter(
+                maxBuckets = 10,
+                bucketIdleTtl = Duration.ofMillis(1),
+                cleanupInterval = 2,
+            )
+
+        assertThat(limiter.tryAcquire("key-1", 1, Duration.ofSeconds(1)).allowed).isTrue()
+
+        assertThat(limiter.trackedBucketCount()).isEqualTo(1)
+    }
+
+    @Test
+    fun `evicts idle buckets after pruning expired timestamps`() {
+        val limiter =
+            InMemoryRequestRateLimiter(
+                maxBuckets = 10,
+                bucketIdleTtl = Duration.ofMillis(1),
+                cleanupInterval = 1,
+            )
+        limiter.tryAcquire("stale", 1, Duration.ofSeconds(1))
+
+        Thread.sleep(20)
+        limiter.tryAcquire("fresh", 1, Duration.ofSeconds(1))
+
+        assertThat(limiter.trackedBucketCount()).isEqualTo(1)
+    }
 }
