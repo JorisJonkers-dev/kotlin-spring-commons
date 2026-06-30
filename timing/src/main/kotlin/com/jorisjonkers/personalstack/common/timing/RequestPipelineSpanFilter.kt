@@ -12,6 +12,8 @@ import org.springframework.core.annotation.Order
 import org.springframework.web.filter.OncePerRequestFilter
 import java.time.Instant
 
+private const val REQUEST_PIPELINE_FILTER_ORDER_OFFSET = 10
+
 /**
  * Outer filter ordered before everything else. Collaborates with
  * `SecurityChainBoundaryFilter` (post Spring Security) and
@@ -146,6 +148,5 @@ class RequestPipelineSpanFilter(
         private const val HANDLER_MAPPING_BEST_MATCHING_PATTERN_ATTRIBUTE =
             "org.springframework.web.servlet.HandlerMapping.bestMatchingPattern"
         private const val MAX_ATTRS = 4
-        private const val REQUEST_PIPELINE_FILTER_ORDER_OFFSET = 10
     }
 }
