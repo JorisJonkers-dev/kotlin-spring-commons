@@ -154,7 +154,9 @@ class SyncAutoConfiguration {
      * never touches checkpoints works fine; spawn/backfill and MULTI_WRITER modes
      * require a real store and will fail loudly here.
      */
-    private object UnsupportedSyncCheckpointStore : SyncCheckpointStore {
+    // internal (not private) so its fail-loudly methods are directly unit-testable; the bean is
+    // only installed when no real SyncCheckpointStore is provided.
+    internal object UnsupportedSyncCheckpointStore : SyncCheckpointStore {
         override fun loadCursor(syncName: SyncName, scope: Any?): CursorCheckpoint = unsupported()
 
         override fun saveCursorIfCurrent(previous: CursorCheckpoint?, next: CursorCheckpoint): Boolean = unsupported()

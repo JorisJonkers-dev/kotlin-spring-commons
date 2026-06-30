@@ -213,60 +213,59 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         val mapper = definition.mapper
         fun durationNow() = Duration.between(start, Instant.now(clock))
 
-        if (!decision.executable) {
-            val outcome =
-                if (decision is SyncDecision.Retry) {
-                    SyncOutcome.Failed(decision.subject, decision.action, durationNow(), decision.failure)
-                } else {
-                    SyncOutcome.Skipped(decision.subject, decision.action, durationNow(), decision.reason)
-                }
-            recordOutcome(context, outcome, tx)
-            return outcome
-        }
-
         if (context.dryRun) {
             val outcome = SyncOutcome.Skipped(decision.subject, decision.action, durationNow(), decision.reason)
             ports.observer.onOutcome(context, outcome)
             return outcome
         }
 
-        when (decision) {
-            is SyncDecision.Import<*, *, *> -> {
-                val d = decision as SyncDecision.Import<R, RID, KEY>
-                ports.localRepository.save(mapper.create(d.remote.record, context), context)
-                saveBaseline(d.subject, d.remote)
+        // Apply the decision. The six executable types write and report `succeeded`; every other
+        // (non-executable: Equal/Ignore/Conflict) decision reaches the `else` and is a skipped no-op.
+        val outcome: SyncOutcome<RID> =
+            when (decision) {
+                is SyncDecision.Import<*, *, *> -> {
+                    val d = decision as SyncDecision.Import<R, RID, KEY>
+                    ports.localRepository.save(mapper.create(d.remote.record, context), context)
+                    saveBaseline(d.subject, d.remote)
+                    SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
+                }
+                is SyncDecision.Update<*, *, *, *> -> {
+                    val d = decision as SyncDecision.Update<A, R, RID, KEY>
+                    ports.localRepository.save(mapper.update(d.local.aggregate, d.remote.record, d.changes, context), context)
+                    saveBaseline(d.subject, d.remote)
+                    SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
+                }
+                is SyncDecision.Restore<*, *, *, *> -> {
+                    val d = decision as SyncDecision.Restore<A, R, RID, KEY>
+                    ports.localRepository.save(mapper.restore(d.local.aggregate, d.remote.record, d.changes, context), context)
+                    saveBaseline(d.subject, d.remote)
+                    SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
+                }
+                is SyncDecision.Relink<*, *, *, *> -> {
+                    val d = decision as SyncDecision.Relink<A, R, RID, KEY>
+                    ports.localRepository.save(mapper.relink(d.local.aggregate, d.remote.record, d.changes, context), context)
+                    saveBaseline(d.subject, d.remote)
+                    SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
+                }
+                is SyncDecision.Delete<*, *, *> -> {
+                    val d = decision as SyncDecision.Delete<A, RID, KEY>
+                    ports.localRepository.save(mapper.delete(d.local.aggregate, d.signal, context), context)
+                    SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
+                }
+                is SyncDecision.Unlink<*, *, *> -> {
+                    val d = decision as SyncDecision.Unlink<A, RID, KEY>
+                    ports.localRepository.save(mapper.unlink(d.local.aggregate, d.unlinkReason, context), context)
+                    SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
+                }
+                is SyncDecision.Retry ->
+                    SyncOutcome.Failed(decision.subject, decision.action, durationNow(), decision.failure)
+                else -> SyncOutcome.Skipped(decision.subject, decision.action, durationNow(), decision.reason)
             }
-            is SyncDecision.Update<*, *, *, *> -> {
-                val d = decision as SyncDecision.Update<A, R, RID, KEY>
-                ports.localRepository.save(mapper.update(d.local.aggregate, d.remote.record, d.changes, context), context)
-                saveBaseline(d.subject, d.remote)
-            }
-            is SyncDecision.Restore<*, *, *, *> -> {
-                val d = decision as SyncDecision.Restore<A, R, RID, KEY>
-                ports.localRepository.save(mapper.restore(d.local.aggregate, d.remote.record, d.changes, context), context)
-                saveBaseline(d.subject, d.remote)
-            }
-            is SyncDecision.Relink<*, *, *, *> -> {
-                val d = decision as SyncDecision.Relink<A, R, RID, KEY>
-                ports.localRepository.save(mapper.relink(d.local.aggregate, d.remote.record, d.changes, context), context)
-                saveBaseline(d.subject, d.remote)
-            }
-            is SyncDecision.Delete<*, *, *> -> {
-                val d = decision as SyncDecision.Delete<A, RID, KEY>
-                ports.localRepository.save(mapper.delete(d.local.aggregate, d.signal, context), context)
-            }
-            is SyncDecision.Unlink<*, *, *> -> {
-                val d = decision as SyncDecision.Unlink<A, RID, KEY>
-                ports.localRepository.save(mapper.unlink(d.local.aggregate, d.unlinkReason, context), context)
-            }
-            else -> Unit
-        }
 
         if (decision.effects.isNotEmpty()) {
             ports.effectOutbox.append(context, decision.effects)
         }
 
-        val outcome = SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
         recordOutcome(context, outcome, tx)
 
         if (decision.effects.isNotEmpty()) {

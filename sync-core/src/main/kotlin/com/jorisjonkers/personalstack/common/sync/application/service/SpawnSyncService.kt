@@ -276,7 +276,7 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         return report
     }
 
-    private fun scopeSubject(context: SyncContext<SCOPE>? = null): SyncSubject<RID> {
+    private fun scopeSubject(context: SyncContext<SCOPE>?): SyncSubject<RID> {
         val scope = context?.scope
         return if (scope != null) {
             SyncSubject.Scope(com.jorisjonkers.personalstack.common.sync.domain.ScopeId(scope.toString()))

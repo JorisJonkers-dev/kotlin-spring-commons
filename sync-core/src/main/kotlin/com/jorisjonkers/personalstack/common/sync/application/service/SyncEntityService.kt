@@ -173,18 +173,6 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         fun skipped(): SyncOutcome<RID> =
             SyncOutcome.Skipped(decision.subject, decision.action, durationNow(), decision.reason)
 
-        // Non-executable decisions never write.
-        if (!decision.executable) {
-            val outcome =
-                if (decision is SyncDecision.Retry) {
-                    SyncOutcome.Failed(decision.subject, decision.action, durationNow(), decision.failure)
-                } else {
-                    skipped()
-                }
-            recordOutcome(context, outcome, tx)
-            return outcome
-        }
-
         if (dryRun) {
             // Reconciliation already ran; report the planned decision without mutation.
             val outcome = skipped()
@@ -193,38 +181,49 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             return outcome
         }
 
-        val saved: A? =
+        // Apply the decision. The six executable types write through the mapper/repository and
+        // report `succeeded`; every other (non-executable: Equal/Ignore/Conflict) decision reaches
+        // the `else` and is reported as a skipped no-op without writing.
+        var saved: A? = null
+        val outcome: SyncOutcome<RID> =
             when (decision) {
                 is SyncDecision.Import<*, *, *> -> {
                     val d = decision as SyncDecision.Import<R, RID, KEY>
-                    mapper.create(d.remote.record, context).let { ports.localRepository.save(it, context) }
+                    saved = mapper.create(d.remote.record, context).let { ports.localRepository.save(it, context) }
+                    succeeded()
                 }
                 is SyncDecision.Update<*, *, *, *> -> {
                     val d = decision as SyncDecision.Update<A, R, RID, KEY>
-                    mapper.update(d.local.aggregate, d.remote.record, d.changes, context)
+                    saved = mapper.update(d.local.aggregate, d.remote.record, d.changes, context)
                         .let { ports.localRepository.save(it, context) }
+                    succeeded()
                 }
                 is SyncDecision.Restore<*, *, *, *> -> {
                     val d = decision as SyncDecision.Restore<A, R, RID, KEY>
-                    mapper.restore(d.local.aggregate, d.remote.record, d.changes, context)
+                    saved = mapper.restore(d.local.aggregate, d.remote.record, d.changes, context)
                         .let { ports.localRepository.save(it, context) }
+                    succeeded()
                 }
                 is SyncDecision.Relink<*, *, *, *> -> {
                     val d = decision as SyncDecision.Relink<A, R, RID, KEY>
-                    mapper.relink(d.local.aggregate, d.remote.record, d.changes, context)
+                    saved = mapper.relink(d.local.aggregate, d.remote.record, d.changes, context)
                         .let { ports.localRepository.save(it, context) }
+                    succeeded()
                 }
                 is SyncDecision.Delete<*, *, *> -> {
                     val d = decision as SyncDecision.Delete<A, RID, KEY>
-                    mapper.delete(d.local.aggregate, d.signal, context)
+                    saved = mapper.delete(d.local.aggregate, d.signal, context)
                         .let { ports.localRepository.save(it, context) }
+                    succeeded()
                 }
                 is SyncDecision.Unlink<*, *, *> -> {
                     val d = decision as SyncDecision.Unlink<A, RID, KEY>
-                    mapper.unlink(d.local.aggregate, d.unlinkReason, context)
+                    saved = mapper.unlink(d.local.aggregate, d.unlinkReason, context)
                         .let { ports.localRepository.save(it, context) }
+                    succeeded()
                 }
-                else -> null
+                is SyncDecision.Retry -> SyncOutcome.Failed(decision.subject, decision.action, durationNow(), decision.failure)
+                else -> skipped()
             }
 
         // Save baseline for record-mutating actions (not Unlink, which has no remote baseline).
@@ -255,7 +254,6 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             ports.effectOutbox.append(context, decision.effects)
         }
 
-        val outcome = succeeded()
         recordOutcome(context, outcome, tx)
 
         // Relay durable effects only AFTER commit.
@@ -302,7 +300,9 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         return report
     }
 
-    private fun finalizeIdempotency(
+    // internal (not private) so the defensive Failed-outcome-with-non-failed-report branch,
+    // which the single-outcome entity flow cannot itself produce, is directly unit-testable.
+    internal fun finalizeIdempotency(
         key: com.jorisjonkers.personalstack.common.sync.domain.IdempotencyKey?,
         report: SyncReport,
         outcome: SyncOutcome<RID>,
