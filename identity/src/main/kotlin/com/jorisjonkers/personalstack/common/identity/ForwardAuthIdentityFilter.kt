@@ -23,32 +23,26 @@ class ForwardAuthIdentityFilter(
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        if (isSkipPath(request)) {
-            filterChain.doFilter(request, response)
-            return
-        }
-
-        val credential = resolveCredential(request)
-        if (credential == null) {
-            writeUnauthorized(response)
-            return
-        }
-
-        val principal =
-            runCatching {
-                jwtDecoder.decode(credential.token).toPrincipal(credential.source)
-            }.getOrElse { exception ->
-                when (exception) {
-                    is JwtException, is IllegalArgumentException -> {
-                        writeUnauthorized(response)
-                        return
-                    }
-                    else -> throw exception
-                }
+        val principal = if (isSkipPath(request)) null else resolvePrincipal(request)
+        when {
+            isSkipPath(request) -> filterChain.doFilter(request, response)
+            principal == null -> writeUnauthorized(response)
+            else -> {
+                request.setAttribute(ATTRIBUTE_NAME, principal)
+                filterChain.doFilter(request, response)
             }
+        }
+    }
 
-        request.setAttribute(ATTRIBUTE_NAME, principal)
-        filterChain.doFilter(request, response)
+    private fun resolvePrincipal(request: HttpServletRequest): ForwardAuthPrincipal? {
+        val credential = resolveCredential(request) ?: return null
+        return try {
+            jwtDecoder.decode(credential.token).toPrincipal(credential.source)
+        } catch (ignored: JwtException) {
+            null
+        } catch (ignored: IllegalArgumentException) {
+            null
+        }
     }
 
     private fun isSkipPath(request: HttpServletRequest): Boolean {
@@ -56,26 +50,26 @@ class ForwardAuthIdentityFilter(
         return properties.skipPathPatterns.any { pattern -> pathMatcher.match(pattern, path) }
     }
 
-    private fun resolveCredential(request: HttpServletRequest): Credential? {
+    private fun resolveCredential(request: HttpServletRequest): Credential? =
+        edgeCredential(request) ?: bearerCredential(request)
+
+    private fun edgeCredential(request: HttpServletRequest): Credential? =
         request
             .getHeader(properties.headerName)
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?.let { return Credential(it, CredentialSource.EDGE_ASSERTION) }
+            ?.let { Credential(it, CredentialSource.EDGE_ASSERTION) }
 
-        if (!properties.acceptAuthorizationBearer) {
-            return null
-        }
-
-        return request
-            .getHeader("Authorization")
+    private fun bearerCredential(request: HttpServletRequest): Credential? =
+        request
+            .takeIf { properties.acceptAuthorizationBearer }
+            ?.getHeader("Authorization")
             ?.trim()
-            ?.takeIf { it.regionMatches(0, "Bearer ", 0, "Bearer ".length, ignoreCase = true) }
-            ?.substring("Bearer ".length)
+            ?.takeIf { it.regionMatches(0, BEARER_PREFIX, 0, BEARER_PREFIX.length, ignoreCase = true) }
+            ?.substring(BEARER_PREFIX.length)
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.let { Credential(it, CredentialSource.AUTHORIZATION_BEARER) }
-    }
 
     private fun Jwt.toPrincipal(source: CredentialSource): ForwardAuthPrincipal {
         val subject =
@@ -100,9 +94,7 @@ class ForwardAuthIdentityFilter(
         response.status = HttpStatus.UNAUTHORIZED.value()
         response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
         response.characterEncoding = Charsets.UTF_8.name()
-        response.writer.write(
-            """{"type":"about:blank","title":"Unauthorized","status":401,"detail":"Missing or invalid caller identity."}""",
-        )
+        response.writer.write(UNAUTHORIZED_PROBLEM_JSON)
     }
 
     private data class Credential(
@@ -112,5 +104,10 @@ class ForwardAuthIdentityFilter(
 
     companion object {
         val ATTRIBUTE_NAME: String = ForwardAuthPrincipal::class.java.name
+
+        private const val BEARER_PREFIX = "Bearer "
+        private const val UNAUTHORIZED_PROBLEM_JSON =
+            "{\"type\":\"about:blank\",\"title\":\"Unauthorized\",\"status\":401," +
+                "\"detail\":\"Missing or invalid caller identity.\"}"
     }
 }
