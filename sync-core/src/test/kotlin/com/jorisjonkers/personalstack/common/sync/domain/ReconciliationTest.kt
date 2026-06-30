@@ -787,9 +787,8 @@ class ReconciliationTest {
         assertThat(components.toList()).isNotEmpty()
     }
 
-    @Suppress("UNCHECKED_CAST")
     // Structural threshold: one exhaustive when keeps generated-member coverage aligned to variants.
-    @Suppress("LongMethod")
+    @Suppress("UNCHECKED_CAST", "LongMethod")
     private fun exerciseGeneratedMembers(decision: SyncDecision<Widget, RemoteWidget, WidgetId>) {
         assertThat(decision).isEqualTo(decision)
         assertThat(decision.hashCode()).isEqualTo(decision.hashCode())
