@@ -34,7 +34,9 @@ annotation class SyncDslMarker
  *     remoteProjector { r -> RemoteRecord(...) }
  *     differ(EmployeeDiffer::diff)
  *     mapper(EmployeeMapper)
- *     matching { pass(name = "remote-id", confidence = MatchConfidence.HARD, localKeys = { ... }, remoteKeys = { ... }) }
+ *     matching {
+ *         pass(name = "remote-id", confidence = MatchConfidence.HARD, localKeys = { ... }, remoteKeys = { ... })
+ *     }
  *     policies { missingRemotePolicy(MissingRemotePolicy { local, at -> ... }) }
  *     execution { listTransactionMode = ListTransactionMode.PER_RECORD; pageSize = 500 }
  * }
@@ -46,56 +48,23 @@ fun <A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any> syncResource(
 ): SyncDefinition<A, R, RID, KEY, SCOPE> =
     SyncResourceBuilder<A, R, RID, KEY, SCOPE>(SyncName(name)).apply(block).build()
 
-/** Mutable builder backing [syncResource]. Not thread-safe; build once at wiring time. */
+/**
+ * Mutable builder backing [syncResource]. Not thread-safe; build once at wiring time.
+ *
+ * Intentionally exposes one setter per port/strategy so call sites stay explicit.
+ */
 @SyncDslMarker
 class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private val name: SyncName,
-) {
-    private var localRepository: LocalSyncRepository<A, RID, SCOPE>? = null
-    private var remoteCatalog: RemoteCatalog<R, RID, KEY, SCOPE>? = null
-    private var lockManager: LockManager? = null
-    private var unitOfWork: SyncUnitOfWork? = null
-    private var effectOutbox: SyncEffectOutbox? = null
-    private var auditTrail: AuditTrail? = null
-    private var observer: SyncObserver? = null
-    private var idempotencyStore: IdempotencyStore? = null
-    private var checkpointStore: SyncCheckpointStore? = null
-
+) : SyncResourcePortBuilder<A, R, RID, KEY, SCOPE>() {
     private var localProjector: LocalProjector<A, RID, KEY>? = null
     private var remoteProjector: RemoteProjector<R, RID, KEY>? = null
     private var differ: SyncDiffer<A, R>? = null
-    private var mapper: SyncMapper<A, R, SCOPE>? = null
+    private var mapper: SyncMapper<A, R, RID, SCOPE>? = null
 
     private val matching = MatchingBuilder<A, R, RID, KEY>()
     private val policies = PoliciesBuilder<A, R, RID, KEY>()
     private var execution = SyncExecutionOptions()
-
-    // --- outbound ports (mandatory ones are checked in build()) -----------------------------
-    fun localRepository(port: LocalSyncRepository<A, RID, SCOPE>) { localRepository = port }
-    fun remoteCatalog(port: RemoteCatalog<R, RID, KEY, SCOPE>) { remoteCatalog = port }
-    fun lockManager(port: LockManager) { lockManager = port }
-    fun unitOfWork(port: SyncUnitOfWork) { unitOfWork = port }
-    fun effectOutbox(port: SyncEffectOutbox) { effectOutbox = port }
-    fun auditTrail(port: AuditTrail) { auditTrail = port }
-    fun observer(port: SyncObserver) { observer = port }
-    fun idempotencyStore(port: IdempotencyStore) { idempotencyStore = port }
-    fun checkpointStore(port: SyncCheckpointStore) { checkpointStore = port }
-
-    /**
-     * Wire all nine outbound ports at once from a prepared [SyncPorts] bag. Sugar for the
-     * individual setters (last call wins), letting a consumer declare ports as a separate bean.
-     */
-    fun ports(ports: SyncPorts<A, R, RID, KEY, SCOPE>) {
-        localRepository(ports.localRepository)
-        remoteCatalog(ports.remoteCatalog)
-        lockManager(ports.lockManager)
-        unitOfWork(ports.unitOfWork)
-        effectOutbox(ports.effectOutbox)
-        auditTrail(ports.auditTrail)
-        observer(ports.observer)
-        idempotencyStore(ports.idempotencyStore)
-        checkpointStore(ports.checkpointStore)
-    }
 
     // --- pure strategies --------------------------------------------------------------------
 
@@ -117,11 +86,17 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         differ = SyncDiffer { local, remote -> diff(local, remote) }
     }
 
-    fun mapper(mapper: SyncMapper<A, R, SCOPE>) { this.mapper = mapper }
+    fun mapper(mapper: SyncMapper<A, R, RID, SCOPE>) {
+        this.mapper = mapper
+    }
 
-    fun matching(block: MatchingBuilder<A, R, RID, KEY>.() -> Unit) { matching.apply(block) }
+    fun matching(block: MatchingBuilder<A, R, RID, KEY>.() -> Unit) {
+        matching.apply(block)
+    }
 
-    fun policies(block: PoliciesBuilder<A, R, RID, KEY>.() -> Unit) { policies.apply(block) }
+    fun policies(block: PoliciesBuilder<A, R, RID, KEY>.() -> Unit) {
+        policies.apply(block)
+    }
 
     fun execution(block: ExecutionBuilder.() -> Unit) {
         execution = ExecutionBuilder(execution).apply(block).build()
@@ -151,12 +126,76 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
                 ),
         )
 
-    private fun <T> requireConfigured(value: T?, what: String): T =
-        requireNonNull(value) { "syncResource(\"${name.value}\"): $what must be configured" }
+    private fun <T> requireConfigured(
+        value: T?,
+        what: String,
+    ): T = value ?: error("syncResource(\"${name.value}\"): $what must be configured")
+}
 
-    // Local helper to keep the message lazy without pulling in extra imports.
-    private inline fun <T> requireNonNull(value: T?, message: () -> String): T =
-        value ?: throw IllegalStateException(message())
+/** Outbound port wiring for [SyncResourceBuilder]. */
+@SyncDslMarker
+open class SyncResourcePortBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any> {
+    protected var localRepository: LocalSyncRepository<A, RID, SCOPE>? = null
+    protected var remoteCatalog: RemoteCatalog<R, RID, KEY, SCOPE>? = null
+    protected var lockManager: LockManager? = null
+    protected var unitOfWork: SyncUnitOfWork? = null
+    protected var effectOutbox: SyncEffectOutbox? = null
+    protected var auditTrail: AuditTrail? = null
+    protected var observer: SyncObserver? = null
+    protected var idempotencyStore: IdempotencyStore? = null
+    protected var checkpointStore: SyncCheckpointStore? = null
+
+    fun localRepository(port: LocalSyncRepository<A, RID, SCOPE>) {
+        localRepository = port
+    }
+
+    fun remoteCatalog(port: RemoteCatalog<R, RID, KEY, SCOPE>) {
+        remoteCatalog = port
+    }
+
+    fun lockManager(port: LockManager) {
+        lockManager = port
+    }
+
+    fun unitOfWork(port: SyncUnitOfWork) {
+        unitOfWork = port
+    }
+
+    fun effectOutbox(port: SyncEffectOutbox) {
+        effectOutbox = port
+    }
+
+    fun auditTrail(port: AuditTrail) {
+        auditTrail = port
+    }
+
+    fun observer(port: SyncObserver) {
+        observer = port
+    }
+
+    fun idempotencyStore(port: IdempotencyStore) {
+        idempotencyStore = port
+    }
+
+    fun checkpointStore(port: SyncCheckpointStore) {
+        checkpointStore = port
+    }
+
+    /**
+     * Wire all nine outbound ports at once from a prepared [SyncPorts] bag. Sugar for the
+     * individual setters (last call wins), letting a consumer declare ports as a separate bean.
+     */
+    fun ports(ports: SyncPorts<A, R, RID, KEY, SCOPE>) {
+        localRepository(ports.localRepository)
+        remoteCatalog(ports.remoteCatalog)
+        lockManager(ports.lockManager)
+        unitOfWork(ports.unitOfWork)
+        effectOutbox(ports.effectOutbox)
+        auditTrail(ports.auditTrail)
+        observer(ports.observer)
+        idempotencyStore(ports.idempotencyStore)
+        checkpointStore(ports.checkpointStore)
+    }
 }
 
 /** Collects the ordered list of [MatchPass]es for a resource. */
@@ -174,21 +213,35 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
     }
 
     /** Hard pass: the local *active* remote id against the remote external id. */
-    fun remoteId(keyOf: (RID) -> KEY, name: String = "remote-id") {
+    fun remoteId(
+        keyOf: (RID) -> KEY,
+        name: String = "remote-id",
+    ) {
         pass(
             name = name,
             confidence = MatchConfidence.HARD,
-            localKeys = { local -> local.registration.remoteId?.let { setOf(keyOf(it)) } ?: emptySet() },
+            localKeys = { local ->
+                local.registration.remoteId
+                    ?.let { setOf(keyOf(it)) }
+                    .orEmpty()
+            },
             remoteKeys = { remote -> setOf(keyOf(remote.externalId)) },
         )
     }
 
     /** Soft pass: the local *remembered* remote id against the remote external id (re-link). */
-    fun rememberedRemoteId(keyOf: (RID) -> KEY, name: String = "remembered-remote-id") {
+    fun rememberedRemoteId(
+        keyOf: (RID) -> KEY,
+        name: String = "remembered-remote-id",
+    ) {
         pass(
             name = name,
             confidence = MatchConfidence.REMEMBERED_REMOTE_ID,
-            localKeys = { local -> local.registration.rememberedRemoteId?.let { setOf(keyOf(it)) } ?: emptySet() },
+            localKeys = { local ->
+                local.registration.rememberedRemoteId
+                    ?.let { setOf(keyOf(it)) }
+                    .orEmpty()
+            },
             remoteKeys = { remote -> setOf(keyOf(remote.externalId)) },
         )
     }
@@ -222,13 +275,19 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
 class PoliciesBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
     private var conflictPolicy: ConflictPolicy<A, R, RID, KEY> = ConflictPolicy.failClosed()
     private var importPolicy: ImportPolicy<R> = ImportPolicy { true }
-    private var missingRemotePolicy: MissingRemotePolicy<A, RID, KEY>? = null
+    private var missingRemotePolicy: MissingRemotePolicy<A, R, RID, KEY>? = null
 
-    fun conflictPolicy(policy: ConflictPolicy<A, R, RID, KEY>) { conflictPolicy = policy }
+    fun conflictPolicy(policy: ConflictPolicy<A, R, RID, KEY>) {
+        conflictPolicy = policy
+    }
 
-    fun importPolicy(policy: ImportPolicy<R>) { importPolicy = policy }
+    fun importPolicy(policy: ImportPolicy<R>) {
+        importPolicy = policy
+    }
 
-    fun missingRemotePolicy(policy: MissingRemotePolicy<A, RID, KEY>) { missingRemotePolicy = policy }
+    fun missingRemotePolicy(policy: MissingRemotePolicy<A, R, RID, KEY>) {
+        missingRemotePolicy = policy
+    }
 
     fun build(): SyncPolicies<A, R, RID, KEY> =
         SyncPolicies(
@@ -242,7 +301,9 @@ class PoliciesBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
 
 /** Mutable view over [SyncExecutionOptions] so the DSL can set knobs by assignment. */
 @SyncDslMarker
-class ExecutionBuilder(initial: SyncExecutionOptions) {
+class ExecutionBuilder(
+    initial: SyncExecutionOptions,
+) {
     var listTransactionMode: ListTransactionMode = initial.listTransactionMode
     var pageSize: Int = initial.pageSize
     var lockTimeout: java.time.Duration = initial.lockTimeout
@@ -271,27 +332,27 @@ fun <KEY : Any> syncKeys(vararg keys: KEY?): Set<KEY> = keys.filterNotNull().toS
 fun <A : Any, RID : Any, KEY : Any> localRecord(
     aggregate: A,
     localId: LocalId?,
-    remoteId: RID?,
-    rememberedRemoteId: RID? = null,
-    remotelyDeletedAt: Instant? = null,
-    changedAt: Instant? = remotelyDeletedAt,
-    version: VersionStamp? = null,
-    lifecycle: SyncRegistrationLifecycle? = null,
+    registration: SyncRegistrationInference<RID>,
     keys: Iterable<KEY> = emptyList(),
 ): LocalRecord<A, RID, KEY> =
     LocalRecord(
         aggregate = aggregate,
         localId = localId,
-        registration =
-            SyncRegistration.inferred(
-                remoteId = remoteId,
-                rememberedRemoteId = rememberedRemoteId,
-                remotelyDeletedAt = remotelyDeletedAt,
-                changedAt = changedAt,
-                version = version,
-                lifecycle = lifecycle,
-            ),
+        registration = SyncRegistration.inferred(registration),
         keys = keys.toSet(),
+    )
+
+fun <A : Any, RID : Any, KEY : Any> localRecord(
+    aggregate: A,
+    localId: LocalId?,
+    remoteId: RID?,
+    keys: Iterable<KEY> = emptyList(),
+): LocalRecord<A, RID, KEY> =
+    localRecord(
+        aggregate = aggregate,
+        localId = localId,
+        registration = SyncRegistrationInference(remoteId = remoteId),
+        keys = keys,
     )
 
 /**
@@ -302,18 +363,29 @@ fun <A : Any, RID : Any, KEY : Any> localRecord(
 fun <R : Any, RID : Any, KEY : Any> remoteRecord(
     record: R,
     externalId: RID,
-    keys: Iterable<KEY> = emptyList(),
-    deleted: Boolean = false,
-    importable: Boolean = true,
-    version: VersionStamp? = null,
-    observedAt: Instant? = null,
+    metadata: RemoteRecordMetadata<KEY> = RemoteRecordMetadata(),
 ): RemoteRecord<R, RID, KEY> =
     RemoteRecord(
         record = record,
         externalId = externalId,
-        keys = keys.toSet(),
-        lifecycle = if (deleted) RemoteRecordLifecycle.DELETED else RemoteRecordLifecycle.ACTIVE,
-        importable = importable,
-        version = version,
-        observedAt = observedAt,
+        keys = metadata.keys.toSet(),
+        lifecycle = if (metadata.deleted) RemoteRecordLifecycle.DELETED else RemoteRecordLifecycle.ACTIVE,
+        importable = metadata.importable,
+        version = metadata.version,
+        observedAt = metadata.observedAt,
     )
+
+fun <R : Any, RID : Any, KEY : Any> remoteRecord(
+    record: R,
+    externalId: RID,
+    keys: Iterable<KEY>,
+): RemoteRecord<R, RID, KEY> =
+    remoteRecord(record = record, externalId = externalId, metadata = RemoteRecordMetadata(keys = keys))
+
+data class RemoteRecordMetadata<KEY : Any>(
+    val keys: Iterable<KEY> = emptyList(),
+    val deleted: Boolean = false,
+    val importable: Boolean = true,
+    val version: VersionStamp? = null,
+    val observedAt: Instant? = null,
+)

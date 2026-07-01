@@ -55,7 +55,12 @@ class ImageTags private constructor(
                             serviceAliases = serviceAliases,
                         )
                     }
-            val duplicates = entries.groupingBy { it.first }.eachCount().filterValues { it > 1 }.keys
+            val duplicates =
+                entries
+                    .groupingBy { it.first }
+                    .eachCount()
+                    .filterValues { it > 1 }
+                    .keys
             require(duplicates.isEmpty()) {
                 "Duplicate IMAGE_TAGS services: ${duplicates.joinToString(", ")}"
             }

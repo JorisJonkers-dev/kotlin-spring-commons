@@ -16,10 +16,13 @@ import java.time.Instant
 class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
     private val localProjector: LocalProjector<A, RID, KEY>,
     private val remoteProjector: RemoteProjector<R, RID, KEY>,
-    private val differ: SyncDiffer<A, R>,
-    private val matchPlan: MatchPlan<A, R, RID, KEY>,
-    private val policies: SyncPolicies<A, R, RID, KEY>,
+    differ: SyncDiffer<A, R>,
+    matchPlan: MatchPlan<A, R, RID, KEY>,
+    policies: SyncPolicies<A, R, RID, KEY>,
 ) {
+    private val decider = SingleReconciliationDecider(differ, policies)
+    private val many = MultiRecordReconciler(localProjector, remoteProjector, matchPlan, policies, decider)
+
     /**
      * Three-way reconciliation of a single pairing. Remote failures must never reach this method;
      * `remote == null` here means authoritative absence only.
@@ -28,10 +31,10 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
         local: A?,
         remote: R?,
         observedAt: Instant,
-    ): SyncDecision<A, R, RID> {
+    ): SyncDecision<A, R, RID, KEY> {
         val localRecord = local?.let { localProjector.project(it) }
         val remoteRecord = remote?.let { remoteProjector.project(it) }
-        return decide(localRecord, remoteRecord, local, remote, observedAt)
+        return decider.decide(localRecord, remoteRecord, local, remote, observedAt)
     }
 
     /**
@@ -45,238 +48,83 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
         locals: Collection<A>,
         remotes: Collection<R>,
         context: SyncContext<*>,
-    ): SyncPlan<A, R, RID> {
-        val localRecords = locals.map { it to localProjector.project(it) }
-        val remoteRecords = remotes.map { it to remoteProjector.project(it) }
+    ): SyncPlan<A, R, RID, KEY> = many.reconcile(locals, remotes, context)
+}
 
-        val decisions = mutableListOf<SyncDecision<A, R, RID>>()
-
-        // Remaining (unmatched) records, keyed by a stable index so removal is deterministic.
-        val remainingLocals = localRecords.toMutableList()
-        val remainingRemotes = remoteRecords.toMutableList()
-
-        for (pass in matchPlan.passes) {
-            if (remainingLocals.isEmpty() || remainingRemotes.isEmpty()) break
-
-            // Index remotes for this pass by their candidate keys, detecting duplicate keys.
-            val remoteByKey = HashMap<KEY, MutableList<Pair<R, RemoteRecord<R, RID, KEY>>>>()
-            for (entry in remainingRemotes) {
-                for (key in pass.remoteKeys(entry.second)) {
-                    remoteByKey.getOrPut(key) { mutableListOf() }.add(entry)
-                }
-            }
-
-            val consumedLocals = HashSet<Int>()
-            val consumedRemotes = HashSet<Int>()
-
-            remainingLocals.forEachIndexed { li, localEntry ->
-                if (li in consumedLocals) return@forEachIndexed
-                val localKeys = pass.localKeys(localEntry.second)
-                if (localKeys.isEmpty()) return@forEachIndexed
-
-                // Gather distinct remote candidates across all keys this local matches on.
-                val candidates = LinkedHashMap<Int, Pair<KEY, Pair<R, RemoteRecord<R, RID, KEY>>>>()
-                for (key in localKeys) {
-                    val matches = remoteByKey[key] ?: continue
-                    for (match in matches) {
-                        val ri = indexOfRemote(remainingRemotes, match)
-                        if (ri >= 0 && ri !in consumedRemotes) {
-                            candidates.putIfAbsent(ri, key to match)
-                        }
-                    }
-                }
-
-                when (candidates.size) {
-                    0 -> Unit
-                    1 -> {
-                        val (ri, keyed) = candidates.entries.first().let { it.key to it.value }
-                        val (matchKey, remoteMatch) = keyed
-                        consumedLocals.add(li)
-                        consumedRemotes.add(ri)
-                        decisions +=
-                            pairedDecision(
-                                pass = pass,
-                                matchKey = matchKey,
-                                localRaw = localEntry.first,
-                                localRecord = localEntry.second,
-                                remoteRaw = remoteMatch.first,
-                                remoteRecord = remoteMatch.second,
-                                observedAt = context.startedAt,
-                            )
-                    }
-                    else -> {
-                        // Ambiguous: one local matched several remotes in the same pass.
-                        consumedLocals.add(li)
-                        candidates.keys.forEach { consumedRemotes.add(it) }
-                        decisions +=
-                            conflict(
-                                kind =
-                                    if (pass.confidence == MatchConfidence.HARD) {
-                                        SyncConflictKind.DUPLICATE_REMOTE_ID
-                                    } else {
-                                        SyncConflictKind.AMBIGUOUS_MATCH
-                                    },
-                                local = localEntry.second,
-                                remote = candidates.values.first().second.second,
-                                message =
-                                    "local matched ${candidates.size} remotes in pass '${pass.name}' " +
-                                        "(confidence=${pass.confidence})",
-                            )
-                    }
-                }
-            }
-
-            // Detect remotes that matched more than one local in this pass (duplicate hard ids etc.).
-            if (pass.confidence == MatchConfidence.HARD) {
-                detectDuplicateRemotes(remainingLocals, consumedLocals, pass)?.let { dup ->
-                    decisions += dup.decisions
-                    consumedLocals.addAll(dup.consumedLocals)
-                    consumedRemotes.addAll(dup.consumedRemotes)
-                }
-            }
-
-            // Remove consumed records before the next pass (descending so indices stay valid).
-            consumedLocals.sortedDescending().forEach { remainingLocals.removeAt(it) }
-            consumedRemotes.sortedDescending().forEach { remainingRemotes.removeAt(it) }
-        }
-
-        // Leftover remotes with no local: import or ignore.
-        for ((raw, record) in remainingRemotes) {
-            decisions += remoteOnlyDecision(record, raw)
-        }
-
-        // Leftover locals with no remote: delegate to the missing-remote policy (authoritative absence).
-        for ((_, record) in remainingLocals) {
-            decisions += policies.missingRemotePolicy.decide(record, context.startedAt)
-        }
-
-        return SyncPlan(context = context, decisions = orderDeterministically(decisions))
-    }
-
-    // --- single-pairing core ----------------------------------------------------------------
-
-    private fun decide(
+private class SingleReconciliationDecider<A : Any, R : Any, RID : Any, KEY : Any>(
+    private val differ: SyncDiffer<A, R>,
+    private val policies: SyncPolicies<A, R, RID, KEY>,
+) {
+    fun decide(
         localRecord: LocalRecord<A, RID, KEY>?,
         remoteRecord: RemoteRecord<R, RID, KEY>?,
         localRaw: A?,
         remoteRaw: R?,
         observedAt: Instant,
-    ): SyncDecision<A, R, RID> =
+    ): SyncDecision<A, R, RID, KEY> =
         when {
             localRecord != null && remoteRecord != null ->
                 pairedDecision(
-                    pass = null,
-                    matchKey = null,
-                    localRaw = localRaw!!,
-                    localRecord = localRecord,
-                    remoteRaw = remoteRaw!!,
-                    remoteRecord = remoteRecord,
+                    match =
+                        MatchedRecords(
+                            pass = null,
+                            localRaw = requireNotNull(localRaw),
+                            localRecord = localRecord,
+                            remoteRaw = requireNotNull(remoteRaw),
+                            remoteRecord = remoteRecord,
+                        ),
                     observedAt = observedAt,
                 )
 
             localRecord == null && remoteRecord != null ->
-                remoteOnlyDecision(remoteRecord, remoteRaw!!)
+                remoteOnlyDecision(remoteRecord, requireNotNull(remoteRaw))
 
             localRecord != null && remoteRecord == null ->
                 policies.missingRemotePolicy.decide(localRecord, observedAt)
 
             else ->
-                SyncDecision.Ignore(
+                SyncDecision.Ignore<A, R, RID, KEY>(
                     subject = SyncSubject.Unknown,
                     reason = SyncReason.Policy("nothing to reconcile"),
                 )
         }
 
-    private fun pairedDecision(
-        pass: MatchPass<A, R, RID, KEY>?,
-        matchKey: KEY?,
-        localRaw: A,
-        localRecord: LocalRecord<A, RID, KEY>,
-        remoteRaw: R,
-        remoteRecord: RemoteRecord<R, RID, KEY>,
+    fun pairedDecision(
+        match: MatchedRecords<A, R, RID, KEY>,
         observedAt: Instant,
-    ): SyncDecision<A, R, RID> {
-        // Remote reports deletion: delete unless we already recorded it (idempotent ignore).
-        if (remoteRecord.lifecycle == RemoteRecordLifecycle.DELETED) {
-            return if (localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED) {
-                SyncDecision.Ignore(
-                    subject = SyncSubject.Pair(localRecord.localId, remoteRecord.externalId),
-                    reason = SyncReason.RemoteDeleted,
-                )
-            } else {
-                SyncDecision.Delete(
-                    local = localRecord,
-                    signal =
-                        RemoteDeleteSignal.Tombstone(
-                            remoteId = remoteRecord.externalId,
-                            observedAt = remoteRecord.observedAt ?: observedAt,
-                            version = remoteRecord.version,
-                        ),
-                )
-            }
-        }
-
-        val changes = differ.diff(localRaw, remoteRaw)
-
-        // Soft-deleted local + active remote -> bring it back.
-        if (localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED) {
-            return SyncDecision.Restore(local = localRecord, remote = remoteRecord, changes = changes)
-        }
-
-        // No active link, or a remembered/soft match to a different id -> relink.
-        if (needsRelink(localRecord.registration, remoteRecord.externalId, pass)) {
-            return SyncDecision.Relink(local = localRecord, remote = remoteRecord, changes = changes)
-        }
-
-        return if (changes.isEmpty) {
-            SyncDecision.Equal(local = localRecord, remote = remoteRecord)
+    ): SyncDecision<A, R, RID, KEY> =
+        if (match.remoteRecord.lifecycle == RemoteRecordLifecycle.DELETED) {
+            remoteDeletedDecision(match.localRecord, match.remoteRecord, observedAt)
         } else {
-            SyncDecision.Update(local = localRecord, remote = remoteRecord, changes = changes)
+            activeRemoteDecision(match)
         }
-    }
 
-    /**
-     * Relink is needed when the local side has no active remote id, or when the match was made by
-     * a soft/remembered pass against an id that is not the local's current active link.
-     */
-    private fun needsRelink(
-        registration: SyncRegistration<RID>,
-        externalId: RID,
-        pass: MatchPass<A, R, RID, KEY>?,
-    ): Boolean {
-        val activeId = registration.remoteId
-        if (activeId == null) return true
-        if (activeId != externalId) return true
-        // Active id equals the matched remote id: a soft pass is just confirming an existing link.
-        return pass != null && pass.confidence != MatchConfidence.HARD && registration.lifecycle != SyncRegistrationLifecycle.LINKED
-    }
-
-    private fun remoteOnlyDecision(
+    fun remoteOnlyDecision(
         remoteRecord: RemoteRecord<R, RID, KEY>,
         remoteRaw: R,
-    ): SyncDecision<A, R, RID> =
+    ): SyncDecision<A, R, RID, KEY> =
         when {
             remoteRecord.lifecycle == RemoteRecordLifecycle.DELETED ->
-                SyncDecision.Ignore(
+                SyncDecision.Ignore<A, R, RID, KEY>(
                     subject = SyncSubject.Remote(remoteRecord.externalId),
                     reason = SyncReason.RemoteDeleted,
                 )
 
             !remoteRecord.importable || !policies.importPolicy.importable(remoteRaw) ->
-                SyncDecision.Ignore(
+                SyncDecision.Ignore<A, R, RID, KEY>(
                     subject = SyncSubject.Remote(remoteRecord.externalId),
                     reason = SyncReason.NotImportable,
                 )
 
-            else -> SyncDecision.Import(remote = remoteRecord)
+            else -> SyncDecision.Import<A, R, RID, KEY>(remote = remoteRecord)
         }
 
-    private fun conflict(
+    fun conflict(
         kind: SyncConflictKind,
         local: LocalRecord<A, RID, KEY>?,
         remote: RemoteRecord<R, RID, KEY>?,
         message: String,
-    ): SyncDecision.Conflict<RID> {
+    ): SyncDecision.Conflict<A, R, RID, KEY> {
         val subject: SyncSubject<RID> =
             when {
                 local != null && remote != null -> SyncSubject.Pair(local.localId, remote.externalId)
@@ -295,70 +143,349 @@ class Reconciliation<A : Any, R : Any, RID : Any, KEY : Any>(
         )
     }
 
-    private fun detectDuplicateRemotes(
-        remainingLocals: List<Pair<A, LocalRecord<A, RID, KEY>>>,
-        alreadyConsumed: Set<Int>,
+    private fun remoteDeletedDecision(
+        localRecord: LocalRecord<A, RID, KEY>,
+        remoteRecord: RemoteRecord<R, RID, KEY>,
+        observedAt: Instant,
+    ): SyncDecision<A, R, RID, KEY> =
+        if (localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED) {
+            SyncDecision.Ignore<A, R, RID, KEY>(
+                subject = SyncSubject.Pair(localRecord.localId, remoteRecord.externalId),
+                reason = SyncReason.RemoteDeleted,
+            )
+        } else {
+            SyncDecision.Delete<A, R, RID, KEY>(
+                local = localRecord,
+                signal =
+                    RemoteDeleteSignal.Tombstone(
+                        remoteId = remoteRecord.externalId,
+                        observedAt = remoteRecord.observedAt ?: observedAt,
+                        version = remoteRecord.version,
+                    ),
+            )
+        }
+
+    private fun activeRemoteDecision(match: MatchedRecords<A, R, RID, KEY>): SyncDecision<A, R, RID, KEY> {
+        val changes = differ.diff(match.localRaw, match.remoteRaw)
+        return when {
+            match.localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED ->
+                SyncDecision.Restore<A, R, RID, KEY>(
+                    local = match.localRecord,
+                    remote = match.remoteRecord,
+                    changes = changes,
+                )
+            needsRelink(match.localRecord.registration, match.remoteRecord.externalId, match.pass) ->
+                SyncDecision.Relink<A, R, RID, KEY>(
+                    local = match.localRecord,
+                    remote = match.remoteRecord,
+                    changes = changes,
+                )
+            changes.isEmpty ->
+                SyncDecision.Equal<A, R, RID, KEY>(local = match.localRecord, remote = match.remoteRecord)
+            else ->
+                SyncDecision.Update<A, R, RID, KEY>(
+                    local = match.localRecord,
+                    remote = match.remoteRecord,
+                    changes = changes,
+                )
+        }
+    }
+
+    private fun needsRelink(
+        registration: SyncRegistration<RID>,
+        externalId: RID,
+        pass: MatchPass<A, R, RID, KEY>?,
+    ): Boolean =
+        registration.remoteId?.let { activeId ->
+            activeId != externalId ||
+                (
+                    pass != null &&
+                        pass.confidence != MatchConfidence.HARD &&
+                        registration.lifecycle != SyncRegistrationLifecycle.LINKED
+                )
+        } ?: true
+}
+
+private class MultiRecordReconciler<A : Any, R : Any, RID : Any, KEY : Any>(
+    private val localProjector: LocalProjector<A, RID, KEY>,
+    private val remoteProjector: RemoteProjector<R, RID, KEY>,
+    private val matchPlan: MatchPlan<A, R, RID, KEY>,
+    private val policies: SyncPolicies<A, R, RID, KEY>,
+    private val decider: SingleReconciliationDecider<A, R, RID, KEY>,
+) {
+    fun reconcile(
+        locals: Collection<A>,
+        remotes: Collection<R>,
+        context: SyncContext<*>,
+    ): SyncPlan<A, R, RID, KEY> {
+        val state =
+            ReconciliationState(
+                remainingLocals = locals.map { it to localProjector.project(it) }.toMutableList(),
+                remainingRemotes = remotes.map { it to remoteProjector.project(it) }.toMutableList(),
+                decisions = mutableListOf(),
+            )
+
+        for (pass in matchPlan.passes) {
+            if (state.remainingLocals.isEmpty() || state.remainingRemotes.isEmpty()) break
+            runPass(state, pass, context.startedAt)
+        }
+
+        addRemainingRemotes(state)
+        addRemainingLocals(state, context.startedAt)
+        return SyncPlan(context = context, decisions = orderDecisions(state.decisions))
+    }
+
+    private fun runPass(
+        state: ReconciliationState<A, R, RID, KEY>,
         pass: MatchPass<A, R, RID, KEY>,
-    ): DuplicateScan? {
-        // Group not-yet-consumed locals by their hard keys; any key shared by >1 local is a conflict.
-        val localsByKey = HashMap<KEY, MutableList<Int>>()
-        remainingLocals.forEachIndexed { li, entry ->
-            if (li in alreadyConsumed) return@forEachIndexed
-            for (key in pass.localKeys(entry.second)) {
-                localsByKey.getOrPut(key) { mutableListOf() }.add(li)
+        observedAt: Instant,
+    ) {
+        val passState =
+            MatchPassState(
+                state = state,
+                pass = pass,
+                remoteByKey = indexRemotesByKey(state.remainingRemotes, pass),
+                consumedLocals = HashSet(),
+                consumedRemotes = HashSet(),
+                observedAt = observedAt,
+            )
+
+        matchLocals(passState)
+        if (pass.confidence == MatchConfidence.HARD) {
+            detectDuplicateLocals(state.remainingLocals, passState.consumedLocals, pass).forEach { duplicate ->
+                state.decisions += duplicate.decision
+                passState.consumedLocals += duplicate.localIndex
             }
         }
-        val dupKeys = localsByKey.filterValues { it.size > 1 }
-        if (dupKeys.isEmpty()) return null
 
-        val decisions = mutableListOf<SyncDecision<A, R, RID>>()
-        val consumedLocals = HashSet<Int>()
-        for ((_, indices) in dupKeys) {
-            for (li in indices) {
-                if (consumedLocals.add(li)) {
-                    decisions +=
-                        conflict(
-                            kind = SyncConflictKind.DUPLICATE_LOCAL_REMOTE_ID,
-                            local = remainingLocals[li].second,
-                            remote = null,
-                            message = "duplicate hard key across local records in pass '${pass.name}'",
-                        )
+        removeConsumed(state.remainingLocals, passState.consumedLocals)
+        removeConsumed(state.remainingRemotes, passState.consumedRemotes)
+    }
+
+    private fun matchLocals(passState: MatchPassState<A, R, RID, KEY>) {
+        passState.state.remainingLocals.forEachIndexed { localIndex, localEntry ->
+            if (localIndex in passState.consumedLocals) return@forEachIndexed
+            val candidates =
+                candidatesFor(
+                    localEntry.second,
+                    passState.pass,
+                    passState.remoteByKey,
+                    passState.consumedRemotes,
+                )
+            when (candidates.size) {
+                0 -> Unit
+                1 ->
+                    consumePair(
+                        passState,
+                        localIndex,
+                        localEntry,
+                        candidates.first(),
+                    )
+                else ->
+                    consumeAmbiguous(
+                        passState,
+                        localIndex,
+                        localEntry,
+                        candidates,
+                    )
+            }
+        }
+    }
+
+    private fun candidatesFor(
+        local: LocalRecord<A, RID, KEY>,
+        pass: MatchPass<A, R, RID, KEY>,
+        remoteByKey: Map<KEY, List<IndexedRemote<R, RID, KEY>>>,
+        consumedRemotes: Set<Int>,
+    ): List<RemoteCandidate<R, RID, KEY>> {
+        val candidates = LinkedHashMap<Int, RemoteCandidate<R, RID, KEY>>()
+        for (key in pass.localKeys(local)) {
+            for (remote in remoteByKey[key].orEmpty()) {
+                if (remote.index !in consumedRemotes) {
+                    candidates.putIfAbsent(remote.index, RemoteCandidate(remote))
                 }
             }
         }
-        return DuplicateScan(decisions, consumedLocals, emptySet())
+        return candidates.values.toList()
     }
 
-    private fun indexOfRemote(
-        remaining: List<Pair<R, RemoteRecord<R, RID, KEY>>>,
-        target: Pair<R, RemoteRecord<R, RID, KEY>>,
-    ): Int = remaining.indexOfFirst { it === target }
+    private fun consumePair(
+        passState: MatchPassState<A, R, RID, KEY>,
+        localIndex: Int,
+        localEntry: Pair<A, LocalRecord<A, RID, KEY>>,
+        candidate: RemoteCandidate<R, RID, KEY>,
+    ) {
+        passState.consumedLocals += localIndex
+        passState.consumedRemotes += candidate.remote.index
+        passState.state.decisions +=
+            decider.pairedDecision(
+                match =
+                    MatchedRecords(
+                        pass = passState.pass,
+                        localRaw = localEntry.first,
+                        localRecord = localEntry.second,
+                        remoteRaw = candidate.remote.raw,
+                        remoteRecord = candidate.remote.record,
+                    ),
+                observedAt = passState.observedAt,
+            )
+    }
 
-    private fun orderDeterministically(
-        decisions: List<SyncDecision<A, R, RID>>,
-    ): List<SyncDecision<A, R, RID>> =
-        decisions.sortedWith(
-            compareBy<SyncDecision<A, R, RID>> { executionRank(it.action) }
-                .thenBy { it.subject.stableKey },
-        )
+    private fun consumeAmbiguous(
+        passState: MatchPassState<A, R, RID, KEY>,
+        localIndex: Int,
+        localEntry: Pair<A, LocalRecord<A, RID, KEY>>,
+        candidates: List<RemoteCandidate<R, RID, KEY>>,
+    ) {
+        passState.consumedLocals += localIndex
+        candidates.forEach { passState.consumedRemotes += it.remote.index }
+        passState.state.decisions +=
+            decider.conflict(
+                kind =
+                    if (passState.pass.confidence == MatchConfidence.HARD) {
+                        SyncConflictKind.DUPLICATE_REMOTE_ID
+                    } else {
+                        SyncConflictKind.AMBIGUOUS_MATCH
+                    },
+                local = localEntry.second,
+                remote = candidates.first().remote.record,
+                message =
+                    "local matched ${candidates.size} remotes in pass '${passState.pass.name}' " +
+                        "(confidence=${passState.pass.confidence})",
+            )
+    }
 
-    private fun executionRank(action: SyncAction): Int =
-        when (action) {
-            SyncAction.IMPORT -> 0
-            SyncAction.RESTORE -> 1
-            SyncAction.RELINK -> 2
-            SyncAction.UPDATE -> 3
-            SyncAction.EQUAL -> 4
-            SyncAction.IGNORE -> 5
-            SyncAction.DELETE -> 6
-            SyncAction.UNLINK -> 7
-            SyncAction.RETRY -> 8
-            SyncAction.CONFLICT -> 9
+    private fun detectDuplicateLocals(
+        remainingLocals: List<Pair<A, LocalRecord<A, RID, KEY>>>,
+        alreadyConsumed: Set<Int>,
+        pass: MatchPass<A, R, RID, KEY>,
+    ): List<DuplicateLocal<A, R, RID, KEY>> {
+        val localsByKey = HashMap<KEY, MutableList<Int>>()
+        remainingLocals.forEachIndexed { localIndex, entry ->
+            if (localIndex !in alreadyConsumed) {
+                pass.localKeys(entry.second).forEach { key ->
+                    localsByKey.getOrPut(key) { mutableListOf() } += localIndex
+                }
+            }
+        }
+        return localsByKey
+            .filterValues { it.size > 1 }
+            .flatMap { (_, indices) -> duplicateLocalDecisions(indices, remainingLocals, pass) }
+    }
+
+    private fun duplicateLocalDecisions(
+        indices: List<Int>,
+        remainingLocals: List<Pair<A, LocalRecord<A, RID, KEY>>>,
+        pass: MatchPass<A, R, RID, KEY>,
+    ): List<DuplicateLocal<A, R, RID, KEY>> =
+        indices.distinct().map { localIndex ->
+            DuplicateLocal(
+                localIndex = localIndex,
+                decision =
+                    decider.conflict(
+                        kind = SyncConflictKind.DUPLICATE_LOCAL_REMOTE_ID,
+                        local = remainingLocals[localIndex].second,
+                        remote = null,
+                        message = "duplicate hard key across local records in pass '${pass.name}'",
+                    ),
+            )
         }
 
-    private inner class DuplicateScan(
-        val decisions: List<SyncDecision<A, R, RID>>,
-        val consumedLocals: Set<Int>,
-        val consumedRemotes: Set<Int>,
+    private fun indexRemotesByKey(
+        remainingRemotes: List<Pair<R, RemoteRecord<R, RID, KEY>>>,
+        pass: MatchPass<A, R, RID, KEY>,
+    ): Map<KEY, List<IndexedRemote<R, RID, KEY>>> {
+        val remoteByKey = HashMap<KEY, MutableList<IndexedRemote<R, RID, KEY>>>()
+        remainingRemotes.forEachIndexed { remoteIndex, entry ->
+            val remote = IndexedRemote(remoteIndex, entry.first, entry.second)
+            pass.remoteKeys(entry.second).forEach { key ->
+                remoteByKey.getOrPut(key) { mutableListOf() } += remote
+            }
+        }
+        return remoteByKey
+    }
+
+    private fun addRemainingRemotes(state: ReconciliationState<A, R, RID, KEY>) {
+        for ((raw, record) in state.remainingRemotes) {
+            state.decisions += decider.remoteOnlyDecision(record, raw)
+        }
+    }
+
+    private fun addRemainingLocals(
+        state: ReconciliationState<A, R, RID, KEY>,
+        observedAt: Instant,
+    ) {
+        for ((_, record) in state.remainingLocals) {
+            state.decisions += policies.missingRemotePolicy.decide(record, observedAt)
+        }
+    }
+
+    private data class ReconciliationState<A : Any, R : Any, RID : Any, KEY : Any>(
+        val remainingLocals: MutableList<Pair<A, LocalRecord<A, RID, KEY>>>,
+        val remainingRemotes: MutableList<Pair<R, RemoteRecord<R, RID, KEY>>>,
+        val decisions: MutableList<SyncDecision<A, R, RID, KEY>>,
+    )
+
+    private data class MatchPassState<A : Any, R : Any, RID : Any, KEY : Any>(
+        val state: ReconciliationState<A, R, RID, KEY>,
+        val pass: MatchPass<A, R, RID, KEY>,
+        val remoteByKey: Map<KEY, List<IndexedRemote<R, RID, KEY>>>,
+        val consumedLocals: MutableSet<Int>,
+        val consumedRemotes: MutableSet<Int>,
+        val observedAt: Instant,
+    )
+
+    private data class IndexedRemote<R : Any, RID : Any, KEY : Any>(
+        val index: Int,
+        val raw: R,
+        val record: RemoteRecord<R, RID, KEY>,
+    )
+
+    private data class RemoteCandidate<R : Any, RID : Any, KEY : Any>(
+        val remote: IndexedRemote<R, RID, KEY>,
+    )
+
+    private data class DuplicateLocal<A : Any, R : Any, RID : Any, KEY : Any>(
+        val localIndex: Int,
+        val decision: SyncDecision.Conflict<A, R, RID, KEY>,
     )
 }
+
+private data class MatchedRecords<A : Any, R : Any, RID : Any, KEY : Any>(
+    val pass: MatchPass<A, R, RID, KEY>?,
+    val localRaw: A,
+    val localRecord: LocalRecord<A, RID, KEY>,
+    val remoteRaw: R,
+    val remoteRecord: RemoteRecord<R, RID, KEY>,
+)
+
+private fun <T> removeConsumed(
+    records: MutableList<T>,
+    consumedIndices: Set<Int>,
+) {
+    consumedIndices.sortedDescending().forEach { records.removeAt(it) }
+}
+
+private fun <A : Any, R : Any, RID : Any, KEY : Any> orderDecisions(
+    decisions: List<SyncDecision<A, R, RID, KEY>>,
+): List<SyncDecision<A, R, RID, KEY>> =
+    decisions.sortedWith(
+        compareBy<SyncDecision<A, R, RID, KEY>> { executionRank(it.action) }
+            .thenBy { it.subject.stableKey },
+    )
+
+private fun executionRank(action: SyncAction): Int = EXECUTION_ORDER.indexOf(action)
+
+private val EXECUTION_ORDER =
+    listOf(
+        SyncAction.IMPORT,
+        SyncAction.RESTORE,
+        SyncAction.RELINK,
+        SyncAction.UPDATE,
+        SyncAction.EQUAL,
+        SyncAction.IGNORE,
+        SyncAction.DELETE,
+        SyncAction.UNLINK,
+        SyncAction.RETRY,
+        SyncAction.CONFLICT,
+    )

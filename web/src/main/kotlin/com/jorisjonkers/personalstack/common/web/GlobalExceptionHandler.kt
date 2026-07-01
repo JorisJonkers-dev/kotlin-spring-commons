@@ -20,6 +20,8 @@ import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 
+private const val GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET = 1000
+
 /**
  * Translates exceptions thrown by controllers / command handlers
  * into RFC 7807 [ProblemDetail] payloads.
@@ -60,7 +62,7 @@ import java.net.URI
  * `HIGHEST_PRECEDENCE` still win for their specific types.
  */
 @RestControllerAdvice
-@Order(Ordered.HIGHEST_PRECEDENCE + 1000)
+@Order(Ordered.HIGHEST_PRECEDENCE + GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET)
 @Suppress("TooManyFunctions", "LargeClass")
 open class GlobalExceptionHandler {
     private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)

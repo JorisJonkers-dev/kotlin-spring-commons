@@ -158,7 +158,7 @@ class RequestPipelineSpanFilterTest {
         val throwingChain =
             FilterChain { req: ServletRequest, _: ServletResponse ->
                 req.setAttribute(RequestTimingAttributes.SECURITY_CHAIN_END_INSTANT, Instant.now())
-                throw IllegalStateException("boom")
+                error("boom")
             }
 
         runCatching { filter.doFilter(request, response, throwingChain) }

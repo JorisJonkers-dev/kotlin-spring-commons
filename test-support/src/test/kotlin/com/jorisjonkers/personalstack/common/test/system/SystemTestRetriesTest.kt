@@ -3,6 +3,7 @@ package com.jorisjonkers.personalstack.common.test.system
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.io.UncheckedIOException
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -19,7 +20,7 @@ class SystemTestRetriesTest {
         val result =
             SystemTestRetries.retryOnConnectionFailure(attempts = 3, delayMillis = 0) {
                 if (attempts.incrementAndGet() < 3) {
-                    throw RuntimeException(ConnectException("refused"))
+                    throw UncheckedIOException(ConnectException("refused"))
                 }
                 "ok"
             }

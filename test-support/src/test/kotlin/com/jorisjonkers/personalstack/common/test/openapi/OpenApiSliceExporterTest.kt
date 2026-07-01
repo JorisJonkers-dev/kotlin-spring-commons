@@ -57,136 +57,143 @@ import java.nio.file.Path
         SyntheticOpenApiCollaboratorConfiguration::class,
     ],
 )
-class OpenApiSliceExporterTest {
+class OpenApiSliceExporterTest
     @Autowired
-    private lateinit var mockMvc: MockMvc
+    constructor(
+        private val mockMvc: MockMvc,
+        private val applicationContext: ApplicationContext,
+    ) {
+        private val objectMapper = ObjectMapper()
 
-    @Autowired
-    private lateinit var applicationContext: ApplicationContext
+        @Test
+        fun `exports deterministic JSON from springdoc MVC slice`() {
+            val json = OpenApiSliceExporter.exportJson(mockMvc, "/api/v1/api-docs")
+            val root = objectMapper.readTree(json)
 
-    @TempDir
-    private lateinit var tempDir: Path
+            assertThat(root.path("openapi").asText()).startsWith("3.")
+            assertThat(root.at("/info/title").asText()).isEqualTo("Synthetic Commons API")
+            assertThat(root.at("/paths/~1widgets~1{id}/get/summary").asText()).isEqualTo("Fetch widget")
+            assertThat(root.at("/paths/~1widgets/post/summary").asText()).isEqualTo("Create widget")
+            val createWidgetNameType =
+                root
+                    .at("/components/schemas/CreateWidgetRequest/properties/name/type")
+                    .asText()
+            assertThat(createWidgetNameType).isEqualTo("string")
+            assertThat(json).endsWith("\n")
+        }
 
-    private val objectMapper = ObjectMapper()
+        @Test
+        fun `normalizes docs path without leading slash`() {
+            val json = OpenApiSliceExporter.exportJson(mockMvc, "api/v1/api-docs")
+            val root = objectMapper.readTree(json)
 
-    @Test
-    fun `exports deterministic JSON from springdoc MVC slice`() {
-        val json = OpenApiSliceExporter.exportJson(mockMvc, "/api/v1/api-docs")
-        val root = objectMapper.readTree(json)
+            assertThat(root.at("/info/title").asText()).isEqualTo("Synthetic Commons API")
+        }
 
-        assertThat(root.path("openapi").asText()).startsWith("3.")
-        assertThat(root.at("/info/title").asText()).isEqualTo("Synthetic Commons API")
-        assertThat(root.at("/paths/~1widgets~1{id}/get/summary").asText()).isEqualTo("Fetch widget")
-        assertThat(root.at("/paths/~1widgets/post/summary").asText()).isEqualTo("Create widget")
-        assertThat(root.at("/components/schemas/CreateWidgetRequest/properties/name/type").asText()).isEqualTo("string")
-        assertThat(json).endsWith("\n")
+        @Test
+        fun `exports JSON from the default docs path`() {
+            val json = OpenApiSliceExporter.exportJson(mockMvcReturning(VALID_OPENAPI_JSON))
+            val root = objectMapper.readTree(json)
+
+            assertThat(root.at("/info/title").asText()).isEqualTo("Stub API")
+        }
+
+        @Test
+        fun `uses default docs path for JSON and YAML writer helpers`(
+            @TempDir tempDir: Path,
+        ) {
+            val jsonPath = tempDir.resolve("default-openapi.json")
+            val yamlPath = tempDir.resolve("default-openapi.yaml")
+
+            OpenApiSliceExporter.writeJson(mockMvcReturning(VALID_OPENAPI_JSON), jsonPath)
+            val yaml = OpenApiSliceExporter.exportYaml(mockMvcReturning(VALID_OPENAPI_JSON))
+            OpenApiSliceExporter.writeYaml(mockMvcReturning(VALID_OPENAPI_JSON), yamlPath)
+
+            assertThat(Files.readString(jsonPath)).contains("\"title\" : \"Stub API\"")
+            assertThat(yaml).contains("Stub API").endsWith("\n")
+            assertThat(Files.readString(yamlPath)).contains("Stub API").endsWith("\n")
+        }
+
+        @Test
+        fun `writes JSON and YAML output files`(
+            @TempDir tempDir: Path,
+        ) {
+            val jsonPath = tempDir.resolve("spec/openapi.json")
+            val yamlPath = tempDir.resolve("spec/openapi.yaml")
+
+            OpenApiSliceExporter.writeJson(mockMvc, jsonPath, "/api/v1/api-docs")
+            OpenApiSliceExporter.writeYaml(mockMvc, yamlPath, "/api/v1/api-docs")
+
+            assertThat(Files.readString(jsonPath)).contains("\"title\" : \"Synthetic Commons API\"")
+            assertThat(Files.readString(yamlPath))
+                .contains("openapi:")
+                .contains("Synthetic Commons API")
+                .endsWith("\n")
+        }
+
+        @Test
+        fun `rejects blank docs paths`() {
+            assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvc, " ") }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("must not be blank")
+        }
+
+        @Test
+        fun `rejects empty OpenAPI responses`() {
+            assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvcReturning("")) }
+                .isInstanceOf(OpenApiExportException::class.java)
+                .hasMessageContaining("empty OpenAPI response")
+                .hasNoCause()
+        }
+
+        @Test
+        fun `rejects invalid OpenAPI JSON responses`() {
+            assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvcReturning("not json")) }
+                .isInstanceOf(OpenApiExportException::class.java)
+                .hasMessageContaining("not valid OpenAPI JSON")
+                .hasCauseInstanceOf(Exception::class.java)
+        }
+
+        @Test
+        fun `wraps fetch failures with slice setup guidance`() {
+            assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvc, "/missing-api-docs") }
+                .isInstanceOf(OpenApiExportException::class.java)
+                .hasMessageContaining("Failed to fetch springdoc OpenAPI JSON")
+                .hasMessageContaining("OpenApiWebMvcSliceConfiguration")
+                .hasCauseInstanceOf(Throwable::class.java)
+        }
+
+        @Test
+        fun `wraps write failures with the output path`(
+            @TempDir tempDir: Path,
+        ) {
+            val outputDirectory = tempDir.resolve("openapi.json")
+            Files.createDirectory(outputDirectory)
+
+            assertThatThrownBy {
+                OpenApiSliceExporter.writeJson(mockMvc, outputDirectory, "/api/v1/api-docs")
+            }.isInstanceOf(OpenApiExportException::class.java)
+                .hasMessageContaining("Failed to write OpenAPI JSON output")
+                .hasMessageContaining(outputDirectory.toString())
+                .hasCauseInstanceOf(Exception::class.java)
+        }
+
+        @Test
+        fun `slice does not start an embedded web server`() {
+            assertThat(applicationContext).isNotInstanceOf(WebServerApplicationContext::class.java)
+            assertThat(applicationContext.getBeansOfType(WebServer::class.java)).isEmpty()
+        }
+
+        private fun mockMvcReturning(body: String): MockMvc =
+            MockMvcBuilders
+                .standaloneSetup(StubOpenApiDocsController(body))
+                .build()
+
+        private companion object {
+            const val VALID_OPENAPI_JSON =
+                """{"openapi":"3.1.0","info":{"title":"Stub API","version":"test"},"paths":{}}"""
+        }
     }
-
-    @Test
-    fun `normalizes docs path without leading slash`() {
-        val json = OpenApiSliceExporter.exportJson(mockMvc, "api/v1/api-docs")
-        val root = objectMapper.readTree(json)
-
-        assertThat(root.at("/info/title").asText()).isEqualTo("Synthetic Commons API")
-    }
-
-    @Test
-    fun `exports JSON from the default docs path`() {
-        val json = OpenApiSliceExporter.exportJson(mockMvcReturning(VALID_OPENAPI_JSON))
-        val root = objectMapper.readTree(json)
-
-        assertThat(root.at("/info/title").asText()).isEqualTo("Stub API")
-    }
-
-    @Test
-    fun `uses default docs path for JSON and YAML writer helpers`() {
-        val jsonPath = tempDir.resolve("default-openapi.json")
-        val yamlPath = tempDir.resolve("default-openapi.yaml")
-
-        OpenApiSliceExporter.writeJson(mockMvcReturning(VALID_OPENAPI_JSON), jsonPath)
-        val yaml = OpenApiSliceExporter.exportYaml(mockMvcReturning(VALID_OPENAPI_JSON))
-        OpenApiSliceExporter.writeYaml(mockMvcReturning(VALID_OPENAPI_JSON), yamlPath)
-
-        assertThat(Files.readString(jsonPath)).contains("\"title\" : \"Stub API\"")
-        assertThat(yaml).contains("Stub API").endsWith("\n")
-        assertThat(Files.readString(yamlPath)).contains("Stub API").endsWith("\n")
-    }
-
-    @Test
-    fun `writes JSON and YAML output files`() {
-        val jsonPath = tempDir.resolve("spec/openapi.json")
-        val yamlPath = tempDir.resolve("spec/openapi.yaml")
-
-        OpenApiSliceExporter.writeJson(mockMvc, jsonPath, "/api/v1/api-docs")
-        OpenApiSliceExporter.writeYaml(mockMvc, yamlPath, "/api/v1/api-docs")
-
-        assertThat(Files.readString(jsonPath)).contains("\"title\" : \"Synthetic Commons API\"")
-        assertThat(Files.readString(yamlPath))
-            .contains("openapi:")
-            .contains("Synthetic Commons API")
-            .endsWith("\n")
-    }
-
-    @Test
-    fun `rejects blank docs paths`() {
-        assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvc, " ") }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("must not be blank")
-    }
-
-    @Test
-    fun `rejects empty OpenAPI responses`() {
-        assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvcReturning("")) }
-            .isInstanceOf(OpenApiExportException::class.java)
-            .hasMessageContaining("empty OpenAPI response")
-            .hasNoCause()
-    }
-
-    @Test
-    fun `rejects invalid OpenAPI JSON responses`() {
-        assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvcReturning("not json")) }
-            .isInstanceOf(OpenApiExportException::class.java)
-            .hasMessageContaining("not valid OpenAPI JSON")
-            .hasCauseInstanceOf(Exception::class.java)
-    }
-
-    @Test
-    fun `wraps fetch failures with slice setup guidance`() {
-        assertThatThrownBy { OpenApiSliceExporter.exportJson(mockMvc, "/missing-api-docs") }
-            .isInstanceOf(OpenApiExportException::class.java)
-            .hasMessageContaining("Failed to fetch springdoc OpenAPI JSON")
-            .hasMessageContaining("OpenApiWebMvcSliceConfiguration")
-            .hasCauseInstanceOf(Throwable::class.java)
-    }
-
-    @Test
-    fun `wraps write failures with the output path`() {
-        val outputDirectory = tempDir.resolve("openapi.json")
-        Files.createDirectory(outputDirectory)
-
-        assertThatThrownBy { OpenApiSliceExporter.writeJson(mockMvc, outputDirectory, "/api/v1/api-docs") }
-            .isInstanceOf(OpenApiExportException::class.java)
-            .hasMessageContaining("Failed to write OpenAPI JSON output")
-            .hasMessageContaining(outputDirectory.toString())
-            .hasCauseInstanceOf(Exception::class.java)
-    }
-
-    @Test
-    fun `slice does not start an embedded web server`() {
-        assertThat(applicationContext).isNotInstanceOf(WebServerApplicationContext::class.java)
-        assertThat(applicationContext.getBeansOfType(WebServer::class.java)).isEmpty()
-    }
-
-    private fun mockMvcReturning(body: String): MockMvc =
-        MockMvcBuilders
-            .standaloneSetup(StubOpenApiDocsController(body))
-            .build()
-
-    private companion object {
-        const val VALID_OPENAPI_JSON =
-            """{"openapi":"3.1.0","info":{"title":"Stub API","version":"test"},"paths":{}}"""
-    }
-}
 
 @RestController
 class StubOpenApiDocsController(

@@ -59,7 +59,10 @@ class FqcnShardConditionTest {
 
     @Test
     fun `default constructor reads the current environment`() {
-        val result = FqcnShardCondition().evaluateExecutionCondition(extensionContextFor(FqcnShardConditionTest::class.java))
+        val result =
+            FqcnShardCondition().evaluateExecutionCondition(
+                extensionContextFor(FqcnShardConditionTest::class.java),
+            )
 
         assertThat(result.isDisabled).isFalse()
     }

@@ -30,7 +30,7 @@ import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncTransactio
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncUnitOfWork
 import java.time.Duration
 
-/**
+/*
  * Reusable, deterministic, in-memory implementations of all nine outbound sync ports.
  *
  * Every adapter is a plain map/list-backed fake with explicit, test-controllable knobs so a test
@@ -71,13 +71,21 @@ class InMemoryLocalSyncRepository<A : Any, RID : Any, SCOPE : Any>(
         return this
     }
 
-    override fun findByRemoteIdIncludingDeleted(remoteId: RID, scope: SCOPE?, context: SyncContext<SCOPE>): A? =
-        rows.lastOrNull { keyOf(it) == remoteId }
+    override fun findByRemoteIdIncludingDeleted(
+        remoteId: RID,
+        scope: SCOPE?,
+        context: SyncContext<SCOPE>,
+    ): A? = rows.lastOrNull { keyOf(it) == remoteId }
 
-    override fun listIncludingDeleted(scope: SCOPE, context: SyncContext<SCOPE>): List<A> =
-        rows.filter { scopeOf(it) == null || scopeOf(it) == scope }
+    override fun listIncludingDeleted(
+        scope: SCOPE,
+        context: SyncContext<SCOPE>,
+    ): List<A> = rows.filter { scopeOf(it) == null || scopeOf(it) == scope }
 
-    override fun save(aggregate: A, context: SyncContext<SCOPE>): A {
+    override fun save(
+        aggregate: A,
+        context: SyncContext<SCOPE>,
+    ): A {
         saved.add(aggregate)
         // Replace an existing row sharing the same remote id, else append.
         val rid = keyOf(aggregate)
@@ -93,7 +101,8 @@ class InMemoryLocalSyncRepository<A : Any, RID : Any, SCOPE : Any>(
         context: SyncContext<SCOPE>,
     ): LocalIdPage<RID> {
         val all =
-            rows.filter { linkedOf(it) && (scope == null || scopeOf(it) == null || scopeOf(it) == scope) }
+            rows
+                .filter { linkedOf(it) && (scope == null || scopeOf(it) == null || scopeOf(it) == scope) }
                 .mapNotNull { keyOf(it) }
         // Single-page fake: ignore the cursor, return everything once with no next cursor.
         return LocalIdPage(ids = all.take(limit), nextCursor = null)
@@ -130,24 +139,34 @@ class InMemoryRemoteCatalog<R : Any, RID : Any, KEY : Any, SCOPE : Any> : Remote
     val fetchOneCalls: MutableList<RID> = mutableListOf()
     val fetchPageCursors: MutableList<SyncCursor?> = mutableListOf()
 
-    fun onFetchOne(remoteId: RID, response: RemoteFetch<RemoteRecord<R, RID, KEY>>) = apply {
+    fun onFetchOne(
+        remoteId: RID,
+        response: RemoteFetch<RemoteRecord<R, RID, KEY>>,
+    ) = apply {
         oneResponses[remoteId] = response
     }
 
-    fun foundOne(remoteId: RID, record: RemoteRecord<R, RID, KEY>) =
-        onFetchOne(remoteId, RemoteFetch.Found(record))
+    fun foundOne(
+        remoteId: RID,
+        record: RemoteRecord<R, RID, KEY>,
+    ) = onFetchOne(remoteId, RemoteFetch.Found(record))
 
     fun onFetchForScope(response: RemoteFetch<RemotePage<R, RID, KEY>>) = apply { scopeResponse = response }
 
     fun enqueuePage(response: RemoteFetch<RemotePage<R, RID, KEY>>) = apply { pageResponses.addLast(response) }
 
-    override fun fetchOne(remoteId: RID, context: SyncContext<SCOPE>): RemoteFetch<RemoteRecord<R, RID, KEY>> {
+    override fun fetchOne(
+        remoteId: RID,
+        context: SyncContext<SCOPE>,
+    ): RemoteFetch<RemoteRecord<R, RID, KEY>> {
         fetchOneCalls.add(remoteId)
         return oneResponses[remoteId] ?: defaultOne
     }
 
-    override fun fetchForScope(scope: SCOPE, context: SyncContext<SCOPE>): RemoteFetch<RemotePage<R, RID, KEY>> =
-        scopeResponse
+    override fun fetchForScope(
+        scope: SCOPE,
+        context: SyncContext<SCOPE>,
+    ): RemoteFetch<RemotePage<R, RID, KEY>> = scopeResponse
 
     override fun fetchPage(
         scope: SCOPE?,
@@ -178,7 +197,11 @@ class InMemoryLockManager(
 
     fun deny(key: String) = apply { denyKeys.add(key) }
 
-    override fun <T> withLock(key: SyncLockKey, timeout: Duration, block: () -> T): LockResult<T> {
+    override fun <T> withLock(
+        key: SyncLockKey,
+        timeout: Duration,
+        block: () -> T,
+    ): LockResult<T> {
         requested.add(key)
         val denied = !grant || key.value in denyKeys
         return if (denied) LockResult.NotAcquired else LockResult.Acquired(block())
@@ -241,7 +264,10 @@ class InMemoryEffectOutbox : SyncEffectOutbox {
     var relayRequests: Int = 0
         private set
 
-    override fun append(context: SyncContext<*>, effects: List<SyncEffect>) {
+    override fun append(
+        context: SyncContext<*>,
+        effects: List<SyncEffect>,
+    ) {
         appended.addAll(effects)
     }
 
@@ -264,7 +290,10 @@ class InMemoryAuditTrail : AuditTrail {
         runStarted.add(context)
     }
 
-    override fun recordOutcome(context: SyncContext<*>, outcome: SyncOutcome<*>) {
+    override fun recordOutcome(
+        context: SyncContext<*>,
+        outcome: SyncOutcome<*>,
+    ) {
         outcomes.add(outcome)
     }
 
@@ -287,7 +316,10 @@ class InMemoryObserver : SyncObserver {
         runStarted.add(context)
     }
 
-    override fun onOutcome(context: SyncContext<*>, outcome: SyncOutcome<*>) {
+    override fun onOutcome(
+        context: SyncContext<*>,
+        outcome: SyncOutcome<*>,
+    ) {
         outcomes.add(outcome)
     }
 
@@ -309,8 +341,14 @@ class InMemoryObserver : SyncObserver {
 class InMemoryIdempotencyStore : IdempotencyStore {
     private sealed interface State {
         data object InProgress : State
-        data class Completed(val report: SyncReport) : State
-        data class Failed(val failure: SyncFailure) : State
+
+        data class Completed(
+            val report: SyncReport,
+        ) : State
+
+        data class Failed(
+            val failure: SyncFailure,
+        ) : State
     }
 
     private val states: MutableMap<IdempotencyKey, State> = mutableMapOf()
@@ -324,9 +362,16 @@ class InMemoryIdempotencyStore : IdempotencyStore {
     fun preClaimInProgress(key: IdempotencyKey) = apply { states[key] = State.InProgress }
 
     /** Force the next claim for [key] to replay a previously completed [report]. */
-    fun preComplete(key: IdempotencyKey, report: SyncReport) = apply { states[key] = State.Completed(report) }
+    fun preComplete(
+        key: IdempotencyKey,
+        report: SyncReport,
+    ) = apply { states[key] = State.Completed(report) }
 
-    override fun claim(key: IdempotencyKey, ttl: Duration, context: SyncContext<*>): IdempotencyClaim {
+    override fun claim(
+        key: IdempotencyKey,
+        ttl: Duration,
+        context: SyncContext<*>,
+    ): IdempotencyClaim {
         claims.add(key)
         return when (val state = states[key]) {
             null -> {
@@ -343,12 +388,18 @@ class InMemoryIdempotencyStore : IdempotencyStore {
         }
     }
 
-    override fun complete(key: IdempotencyKey, report: SyncReport) {
+    override fun complete(
+        key: IdempotencyKey,
+        report: SyncReport,
+    ) {
         completed.add(key)
         states[key] = State.Completed(report)
     }
 
-    override fun fail(key: IdempotencyKey, failure: SyncFailure) {
+    override fun fail(
+        key: IdempotencyKey,
+        failure: SyncFailure,
+    ) {
         failed.add(key)
         states[key] = State.Failed(failure)
     }
@@ -374,24 +425,38 @@ class InMemoryCheckpointStore : SyncCheckpointStore {
     val casCalls: MutableList<CursorCheckpoint> = mutableListOf()
 
     /** Pre-populate the stored cursor for a (syncName, scope). */
-    fun seedCursor(checkpoint: CursorCheckpoint) = apply { cursors[checkpoint.syncName to checkpoint.scope] = checkpoint }
+    fun seedCursor(checkpoint: CursorCheckpoint) =
+        apply { cursors[checkpoint.syncName to checkpoint.scope] = checkpoint }
 
-    override fun loadCursor(syncName: SyncName, scope: Any?): CursorCheckpoint? = cursors[syncName to scope]
+    override fun loadCursor(
+        syncName: SyncName,
+        scope: Any?,
+    ): CursorCheckpoint? = cursors[syncName to scope]
 
-    override fun saveCursorIfCurrent(previous: CursorCheckpoint?, next: CursorCheckpoint): Boolean {
+    override fun saveCursorIfCurrent(
+        previous: CursorCheckpoint?,
+        next: CursorCheckpoint,
+    ): Boolean {
         casCalls.add(next)
-        if (casAlwaysFails) return false
         val key = next.syncName to next.scope
         val current = cursors[key]
-        if (current != previous) return false
-        cursors[key] = next
-        return true
+        val shouldSave = !casAlwaysFails && current == previous
+        if (shouldSave) {
+            cursors[key] = next
+        }
+        return shouldSave
     }
 
-    override fun loadBaseline(syncName: SyncName, subject: SyncSubject<*>): BaselineSnapshot? =
-        baselines[syncName to subject.stableKey]
+    override fun loadBaseline(
+        syncName: SyncName,
+        subject: SyncSubject<*>,
+    ): BaselineSnapshot? = baselines[syncName to subject.stableKey]
 
-    override fun saveBaseline(syncName: SyncName, subject: SyncSubject<*>, baseline: BaselineSnapshot) {
+    override fun saveBaseline(
+        syncName: SyncName,
+        subject: SyncSubject<*>,
+        baseline: BaselineSnapshot,
+    ) {
         baselines[syncName to subject.stableKey] = baseline
         savedBaselines.add(baseline)
     }

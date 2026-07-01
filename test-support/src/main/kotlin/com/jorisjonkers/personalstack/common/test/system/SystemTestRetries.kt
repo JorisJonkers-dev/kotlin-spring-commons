@@ -30,7 +30,8 @@ object SystemTestRetries {
                 }
             }
         }
-        throw lastException ?: IllegalStateException("retry failed without an exception")
+        val failure = lastException ?: error("retry failed without an exception")
+        throw failure
     }
 
     private inline fun <reified T : Throwable> Throwable.hasCause(): Boolean {

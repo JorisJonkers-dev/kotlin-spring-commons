@@ -118,19 +118,22 @@ class GcEventNotificationListener(
         notification: Notification,
         handback: Any?,
     ) {
-        if (notification.type != GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION) return
-        val data = notification.userData as? CompositeData ?: return
-        val info = GarbageCollectionNotificationInfo.from(data)
-        val duration = info.gcInfo.duration
-        if (duration < minDurationMs) return
-        emitter.emit(
-            gcName = info.gcName,
-            gcCause = info.gcCause,
-            gcAction = info.gcAction,
-            startEpochMillis = jvmStartEpochMillis + info.gcInfo.startTime,
-            durationMillis = duration,
-        )
+        val info = notification.toGarbageCollectionInfo()
+        if (info != null && info.gcInfo.duration >= minDurationMs) {
+            emitter.emit(
+                gcName = info.gcName,
+                gcCause = info.gcCause,
+                gcAction = info.gcAction,
+                startEpochMillis = jvmStartEpochMillis + info.gcInfo.startTime,
+                durationMillis = info.gcInfo.duration,
+            )
+        }
     }
+
+    private fun Notification.toGarbageCollectionInfo(): GarbageCollectionNotificationInfo? =
+        (userData as? CompositeData)
+            ?.takeIf { type == GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION }
+            ?.let { GarbageCollectionNotificationInfo.from(it) }
 
     private companion object {
         const val DEFAULT_MIN_DURATION_MS = 5L

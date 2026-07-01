@@ -79,11 +79,14 @@ class ApplicationTracingAspect(
     private fun renderArgs(
         className: String,
         args: Array<Any?>?,
-    ): String {
-        if (args.isNullOrEmpty()) return ""
-        if (SENSITIVE_CLASS_TOKENS.any { className.contains(it, ignoreCase = true) }) {
-            return "redacted"
+    ): String =
+        when {
+            args.isNullOrEmpty() -> ""
+            SENSITIVE_CLASS_TOKENS.any { className.contains(it, ignoreCase = true) } -> "redacted"
+            else -> renderSafeArgs(args)
         }
+
+    private fun renderSafeArgs(args: Array<Any?>): String {
         val out = StringBuilder()
         for ((i, arg) in args.withIndex()) {
             if (i > 0) out.append(", ")

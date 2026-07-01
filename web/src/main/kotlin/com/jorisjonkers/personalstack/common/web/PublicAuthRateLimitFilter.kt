@@ -11,6 +11,10 @@ import org.springframework.util.AntPathMatcher
 import org.springframework.web.filter.OncePerRequestFilter
 
 private val IP_LITERAL_PATTERN = Regex("^[0-9A-Fa-f:.]+$")
+private const val MAX_FORWARDED_IP_HEADER_LENGTH = 64
+private const val MAX_IP_LITERAL_LENGTH = 45
+private const val TOO_MANY_REQUESTS_PROBLEM_JSON =
+    """{"type":"about:blank","title":"Too Many Requests","status":429,"detail":"Too many requests. Please try again later."}"""
 
 class PublicAuthRateLimitFilter(
     private val limiter: InMemoryRequestRateLimiter,
@@ -62,9 +66,7 @@ class PublicAuthRateLimitFilter(
         response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
         response.characterEncoding = Charsets.UTF_8.name()
         response.setHeader("Retry-After", decision.retryAfterSeconds.toString())
-        response.writer.write(
-            """{"type":"about:blank","title":"Too Many Requests","status":429,"detail":"Too many requests. Please try again later."}""",
-        )
+        response.writer.write(TOO_MANY_REQUESTS_PROBLEM_JSON)
     }
 
     fun resolveClientIp(request: HttpServletRequest): String {
@@ -72,38 +74,47 @@ class PublicAuthRateLimitFilter(
         if (!isTrustedProxy(remoteAddr)) {
             return remoteAddr
         }
-        normalizeIpLiteral(request.getHeader("X-Real-IP"))?.let { return it }
-        request
-            .getHeader("X-Forwarded-For")
-            ?.split(",")
-            ?.asSequence()
-            ?.mapNotNull { normalizeIpLiteral(it) }
-            ?.firstOrNull()
-            ?.let { return it }
-        return remoteAddr
+        return forwardedClientIp(request) ?: remoteAddr
     }
+
+    private fun forwardedClientIp(request: HttpServletRequest): String? =
+        normalizeIpLiteral(request.getHeader("X-Real-IP"))
+            ?: request
+                .getHeader("X-Forwarded-For")
+                ?.split(",")
+                ?.asSequence()
+                ?.mapNotNull { normalizeIpLiteral(it) }
+                ?.firstOrNull()
 
     private fun isTrustedProxy(remoteAddr: String): Boolean =
         remoteAddr != "unknown" &&
-            trustedProxyMatchers.any { matcher -> runCatching { matcher.matches(remoteAddr) }.getOrDefault(false) }
+            trustedProxyMatchers.any { matcher ->
+                runCatching { matcher.matches(remoteAddr) }.getOrDefault(false)
+            }
 
     private fun normalizeIpLiteral(raw: String?): String? {
         val value = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        if (value.length > 64) return null
-        val unbracketed =
-            if (value.startsWith("[") && value.contains("]")) {
-                value.substringAfter('[').substringBefore(']')
-            } else {
-                value
-            }
-        val withoutPort =
-            if (unbracketed.contains('.') && unbracketed.count { it == ':' } == 1) {
-                unbracketed.substringBefore(':')
-            } else {
-                unbracketed
-            }.trim()
-        if (withoutPort.isBlank() || withoutPort.length > 45) return null
-        if (!IP_LITERAL_PATTERN.matches(withoutPort)) return null
-        return withoutPort.lowercase()
+        return value
+            .takeIf { it.length <= MAX_FORWARDED_IP_HEADER_LENGTH }
+            ?.let(::stripIpv6Brackets)
+            ?.let(::stripIpv4Port)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it.length <= MAX_IP_LITERAL_LENGTH }
+            ?.takeIf(IP_LITERAL_PATTERN::matches)
+            ?.lowercase()
     }
+
+    private fun stripIpv6Brackets(value: String): String =
+        if (value.startsWith("[") && value.contains("]")) {
+            value.substringAfter('[').substringBefore(']')
+        } else {
+            value
+        }
+
+    private fun stripIpv4Port(value: String): String =
+        if (value.contains('.') && value.count { it == ':' } == 1) {
+            value.substringBefore(':')
+        } else {
+            value
+        }
 }

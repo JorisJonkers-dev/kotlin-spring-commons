@@ -150,19 +150,19 @@ class StackSmokeSuiteTest {
         override fun <T> send(
             request: HttpRequest,
             responseBodyHandler: HttpResponse.BodyHandler<T>,
-        ): HttpResponse<T> {
-            throw exception
-        }
+        ): HttpResponse<T> = throw exception
 
         override fun <T> sendAsync(
             request: HttpRequest,
             responseBodyHandler: HttpResponse.BodyHandler<T>,
-        ): CompletableFuture<HttpResponse<T>> = CompletableFuture.failedFuture(UnsupportedOperationException("not used"))
+        ): CompletableFuture<HttpResponse<T>> =
+            CompletableFuture.failedFuture(UnsupportedOperationException("not used"))
 
         override fun <T> sendAsync(
             request: HttpRequest,
             responseBodyHandler: HttpResponse.BodyHandler<T>,
             pushPromiseHandler: HttpResponse.PushPromiseHandler<T>,
-        ): CompletableFuture<HttpResponse<T>> = CompletableFuture.failedFuture(UnsupportedOperationException("not used"))
+        ): CompletableFuture<HttpResponse<T>> =
+            CompletableFuture.failedFuture(UnsupportedOperationException("not used"))
     }
 }

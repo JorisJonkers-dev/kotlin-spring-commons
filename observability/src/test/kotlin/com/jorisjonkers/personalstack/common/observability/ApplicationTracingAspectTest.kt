@@ -123,7 +123,7 @@ class ApplicationTracingAspectTest {
             fourth: String,
         ): String = listOf(first, second, third, fourth).joinToString()
 
-        open fun boom(): Nothing = throw IllegalStateException("nope")
+        open fun boom(): Nothing = error("nope")
     }
 
     @Suppress("FunctionOnlyReturningConstant")

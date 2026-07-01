@@ -73,7 +73,7 @@ class RequestTimingFilterTest {
         val response = MockHttpServletResponse().apply { status = 500 }
         val throwingChain =
             FilterChain { _: ServletRequest, _: ServletResponse ->
-                throw IllegalStateException("boom")
+                error("boom")
             }
 
         runCatching { filter.doFilter(request, response, throwingChain) }

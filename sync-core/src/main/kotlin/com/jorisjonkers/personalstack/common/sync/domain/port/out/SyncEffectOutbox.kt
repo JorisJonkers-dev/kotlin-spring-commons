@@ -14,7 +14,10 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncEffect
  */
 interface SyncEffectOutbox {
     /** Persists [effects] in the current transaction. Must be a no-op for an empty list. */
-    fun append(context: SyncContext<*>, effects: List<SyncEffect>)
+    fun append(
+        context: SyncContext<*>,
+        effects: List<SyncEffect>,
+    )
 
     /** Triggers relay of durable effects. Called after commit, never before. */
     fun requestRelay(context: SyncContext<*>)

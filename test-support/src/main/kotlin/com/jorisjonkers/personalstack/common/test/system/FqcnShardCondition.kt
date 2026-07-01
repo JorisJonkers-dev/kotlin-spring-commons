@@ -14,20 +14,16 @@ class FqcnShardCondition : ExecutionCondition {
     }
 
     override fun evaluateExecutionCondition(context: ExtensionContext): ConditionEvaluationResult {
-        val total = environment.shardCount ?: return ConditionEvaluationResult.enabled("sharding disabled")
-        val index =
-            environment.shardIndex
-                ?: return ConditionEvaluationResult.disabled("test.shard.index unset (count=$total)")
-        if (index !in 1..total) {
-            return ConditionEvaluationResult.disabled("test.shard.index=$index outside 1..$total")
-        }
-        val fqcn =
-            context.testClass.map { it.name }.orElse(null)
-                ?: return ConditionEvaluationResult.enabled("no test class")
-        return if (owns(fqcn, index, total)) {
-            ConditionEvaluationResult.enabled("shard $index/$total owns $fqcn")
-        } else {
-            ConditionEvaluationResult.disabled("shard $index/$total does not own $fqcn")
+        val total = environment.shardCount
+        val index = environment.shardIndex
+        val fqcn = context.testClass.map { it.name }.orElse(null)
+        return when {
+            total == null -> ConditionEvaluationResult.enabled("sharding disabled")
+            index == null -> ConditionEvaluationResult.disabled("test.shard.index unset (count=$total)")
+            index !in 1..total -> ConditionEvaluationResult.disabled("test.shard.index=$index outside 1..$total")
+            fqcn == null -> ConditionEvaluationResult.enabled("no test class")
+            owns(fqcn, index, total) -> ConditionEvaluationResult.enabled("shard $index/$total owns $fqcn")
+            else -> ConditionEvaluationResult.disabled("shard $index/$total does not own $fqcn")
         }
     }
 

@@ -28,9 +28,8 @@ internal object ActuatorObservationPredicate : ObservationPredicate {
         name: String,
         context: Observation.Context,
     ): Boolean {
-        if (name != HTTP_SERVER_REQUESTS) return true
-        val uri = (context as? ServerRequestObservationContext)?.carrier?.requestURI ?: return true
-        return !isExcluded(uri)
+        val uri = (context as? ServerRequestObservationContext)?.carrier?.requestURI
+        return name != HTTP_SERVER_REQUESTS || uri == null || !isExcluded(uri)
     }
 
     private fun isExcluded(uri: String): Boolean =

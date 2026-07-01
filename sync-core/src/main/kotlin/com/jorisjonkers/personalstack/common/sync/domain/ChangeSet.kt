@@ -4,14 +4,25 @@ import java.time.Instant
 
 /** Optimistic-concurrency stamp used to detect remote/local version skew. */
 sealed interface VersionStamp {
-    data class Token(val value: String) : VersionStamp
-    data class Timestamp(val value: Instant) : VersionStamp
-    data class Number(val value: Long) : VersionStamp
+    data class Token(
+        val value: String,
+    ) : VersionStamp
+
+    data class Timestamp(
+        val value: Instant,
+    ) : VersionStamp
+
+    data class Number(
+        val value: Long,
+    ) : VersionStamp
+
     data object Unknown : VersionStamp
 }
 
 /** Opaque, comparable digest of a record (or field) used to detect change without retaining payloads. */
-data class Fingerprint(val value: String)
+data class Fingerprint(
+    val value: String,
+)
 
 /**
  * The diff between a local aggregate and a remote record, expressed as a set of changed fields.

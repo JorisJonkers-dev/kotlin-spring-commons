@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 
 @ExtendWith(FqcnShardCondition::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-abstract class PlaywrightSystemTestBase {
+open class PlaywrightSystemTestBase {
     protected val environment: SystemTestEnvironment = SystemTestEnvironment.current
     protected val apiUrl: String = environment.apiUrl
     protected val frontendUrl: String = environment.frontendUrl
@@ -92,6 +92,7 @@ internal object PlaywrightNavigationRetries {
                 }
             }
         }
-        throw lastException ?: IllegalStateException("navigation failed without an exception")
+        val failure = lastException ?: error("navigation failed without an exception")
+        throw failure
     }
 }

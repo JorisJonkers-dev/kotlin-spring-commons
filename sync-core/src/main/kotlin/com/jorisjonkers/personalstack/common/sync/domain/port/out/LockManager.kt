@@ -19,6 +19,9 @@ interface LockManager {
 }
 
 sealed interface LockResult<out T> {
-    data class Acquired<T>(val value: T) : LockResult<T>
+    data class Acquired<T>(
+        val value: T,
+    ) : LockResult<T>
+
     data object NotAcquired : LockResult<Nothing>
 }

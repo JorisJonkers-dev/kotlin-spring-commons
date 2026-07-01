@@ -7,7 +7,7 @@ class RabbitMqMessagingProperties {
     var enabled: Boolean = true
     var exchange: String = "application.events"
     var deadLetterExchange: String = "application.events.dlx"
-    var bindings: MutableMap<String, RabbitMqBindingProperties> =
+    var bindings: Map<String, RabbitMqBindingProperties> =
         linkedMapOf(
             "user-registered" to
                 RabbitMqBindingProperties(

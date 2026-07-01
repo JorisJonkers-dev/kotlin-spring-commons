@@ -6,9 +6,9 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarness
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetId
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
-import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 /**
  * Covers the additive ergonomic layer: ports() bag wiring, projection() objects, the declarative
@@ -78,17 +78,18 @@ class ErgonomicDslTest {
     @Test
     fun `matching verbs derive the expected passes and compose with raw pass`() {
         val plan =
-            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>().apply {
-                remoteId(WidgetKey::Remote)
-                rememberedRemoteId(WidgetKey::Remote)
-                natural(WidgetKey.Sku::class.java, "sku")
-                natural(WidgetKey.Sku::class.java, "sku-by-class")
-                pass(
-                    name = "raw",
-                    localKeys = { emptySet() },
-                    remoteKeys = { emptySet() },
-                )
-            }.build()
+            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>()
+                .apply {
+                    remoteId(WidgetKey::Remote)
+                    rememberedRemoteId(WidgetKey::Remote)
+                    natural(WidgetKey.Sku::class.java, "sku")
+                    natural(WidgetKey.Sku::class.java, "sku-by-class")
+                    pass(
+                        name = "raw",
+                        localKeys = { emptySet() },
+                        remoteKeys = { emptySet() },
+                    )
+                }.build()
 
         assertThat(plan.passes.map { it.name })
             .containsExactly("remote-id", "remembered-remote-id", "sku", "sku-by-class", "raw")
@@ -104,8 +105,11 @@ class ErgonomicDslTest {
             localRecord(
                 aggregate = Widget.neverLinked("l1", "SKU1", "n"),
                 localId = LocalId("l1"),
-                remoteId = WidgetId("active"),
-                rememberedRemoteId = WidgetId("remembered"),
+                registration =
+                    SyncRegistrationInference(
+                        remoteId = WidgetId("active"),
+                        rememberedRemoteId = WidgetId("remembered"),
+                    ),
                 keys = syncKeys<WidgetKey>(WidgetKey.Sku("SKU1")),
             )
         val remote =
@@ -127,10 +131,11 @@ class ErgonomicDslTest {
     @Test
     fun `remote and remembered id passes yield no keys when the registration ids are absent`() {
         val plan =
-            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>().apply {
-                remoteId(WidgetKey::Remote)
-                rememberedRemoteId(WidgetKey::Remote)
-            }.build()
+            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>()
+                .apply {
+                    remoteId(WidgetKey::Remote)
+                    rememberedRemoteId(WidgetKey::Remote)
+                }.build()
         val unlinked =
             localRecord<Widget, WidgetId, WidgetKey>(
                 aggregate = Widget.neverLinked("l1", "SKU1", "n"),
@@ -145,9 +150,10 @@ class ErgonomicDslTest {
     @Test
     fun `natural verb defaults the pass name to the key class simple name`() {
         val plan =
-            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>().apply {
-                natural(WidgetKey.Sku::class.java)
-            }.build()
+            MatchingBuilder<Widget, RemoteWidget, WidgetId, WidgetKey>()
+                .apply {
+                    natural(WidgetKey.Sku::class.java)
+                }.build()
 
         assertThat(plan.passes.single().name).isEqualTo("Sku")
     }
@@ -167,14 +173,35 @@ class ErgonomicDslTest {
     @Test
     fun `inferred registration covers every lifecycle branch`() {
         val deletedAt = Instant.parse("2026-06-30T00:00:00Z")
-        assertThat(SyncRegistration.inferred(remoteId = null, lifecycle = SyncRegistrationLifecycle.LINKED).lifecycle)
-            .isEqualTo(SyncRegistrationLifecycle.LINKED)
-        assertThat(SyncRegistration.inferred(remoteId = WidgetId("r"), remotelyDeletedAt = deletedAt).lifecycle)
-            .isEqualTo(SyncRegistrationLifecycle.REMOTELY_DELETED)
+        assertThat(
+            SyncRegistration
+                .inferred(
+                    SyncRegistrationInference<WidgetId>(
+                        remoteId = null,
+                        lifecycle = SyncRegistrationLifecycle.LINKED,
+                    ),
+                ).lifecycle,
+        ).isEqualTo(SyncRegistrationLifecycle.LINKED)
+        assertThat(
+            SyncRegistration
+                .inferred(
+                    SyncRegistrationInference(
+                        remoteId = WidgetId("r"),
+                        remotelyDeletedAt = deletedAt,
+                    ),
+                ).lifecycle,
+        ).isEqualTo(SyncRegistrationLifecycle.REMOTELY_DELETED)
         assertThat(SyncRegistration.inferred(remoteId = WidgetId("r")).lifecycle)
             .isEqualTo(SyncRegistrationLifecycle.LINKED)
-        assertThat(SyncRegistration.inferred(remoteId = null, rememberedRemoteId = WidgetId("r")).lifecycle)
-            .isEqualTo(SyncRegistrationLifecycle.UNLINKED)
+        assertThat(
+            SyncRegistration
+                .inferred(
+                    SyncRegistrationInference(
+                        remoteId = null,
+                        rememberedRemoteId = WidgetId("r"),
+                    ),
+                ).lifecycle,
+        ).isEqualTo(SyncRegistrationLifecycle.UNLINKED)
         assertThat(SyncRegistration.inferred<WidgetId>(remoteId = null).lifecycle)
             .isEqualTo(SyncRegistrationLifecycle.NEVER_LINKED)
     }
@@ -189,8 +216,23 @@ class ErgonomicDslTest {
         assertThat(inferred.rememberedRemoteId).isNull()
         assertThat(inferred.changedAt).isNull()
 
-        assertThat(SyncRegistration.inferred(remoteId = null, remotelyDeletedAt = deletedAt).changedAt).isEqualTo(deletedAt)
-        val withExplicit = SyncRegistration.inferred(remoteId = null, changedAt = explicit, version = version)
+        assertThat(
+            SyncRegistration
+                .inferred(
+                    SyncRegistrationInference<WidgetId>(
+                        remoteId = null,
+                        remotelyDeletedAt = deletedAt,
+                    ),
+                ).changedAt,
+        ).isEqualTo(deletedAt)
+        val withExplicit =
+            SyncRegistration.inferred(
+                SyncRegistrationInference<WidgetId>(
+                    remoteId = null,
+                    changedAt = explicit,
+                    version = version,
+                ),
+            )
         assertThat(withExplicit.changedAt).isEqualTo(explicit)
         assertThat(withExplicit.version).isEqualTo(version)
     }
@@ -213,7 +255,12 @@ class ErgonomicDslTest {
         assertThat(record.registration.rememberedRemoteId).isNull()
         assertThat(record.keys).containsExactly(WidgetKey.Sku("SKU1"))
 
-        val empty = localRecord<Widget, WidgetId, WidgetKey>(aggregate = widget, localId = null, remoteId = null)
+        val empty =
+            localRecord<Widget, WidgetId, WidgetKey>(
+                aggregate = widget,
+                localId = null,
+                registration = SyncRegistrationInference(remoteId = null),
+            )
         assertThat(empty.localId).isNull()
         assertThat(empty.keys).isEmpty()
         assertThat(empty.registration.lifecycle).isEqualTo(SyncRegistrationLifecycle.NEVER_LINKED)
@@ -237,11 +284,14 @@ class ErgonomicDslTest {
             remoteRecord(
                 record = dto,
                 externalId = WidgetId("r1"),
-                keys = syncKeys<WidgetKey>(WidgetKey.Remote(WidgetId("r1"))),
-                deleted = true,
-                importable = false,
-                version = VersionStamp.Number(3),
-                observedAt = observedAt,
+                metadata =
+                    RemoteRecordMetadata(
+                        keys = syncKeys<WidgetKey>(WidgetKey.Remote(WidgetId("r1"))),
+                        deleted = true,
+                        importable = false,
+                        version = VersionStamp.Number(3),
+                        observedAt = observedAt,
+                    ),
             )
         assertThat(deleted.lifecycle).isEqualTo(RemoteRecordLifecycle.DELETED)
         assertThat(deleted.importable).isFalse()

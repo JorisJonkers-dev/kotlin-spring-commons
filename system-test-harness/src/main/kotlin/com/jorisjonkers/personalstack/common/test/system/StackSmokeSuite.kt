@@ -20,7 +20,9 @@ class StackSmokeSuite(
         val failures = results.filterNot(StackSmokeCheckResult::successful)
         check(failures.isEmpty()) {
             failures.joinToString(separator = "\n") {
-                "${it.service} ${it.uri} returned ${it.statusCode ?: "no response"}${it.error?.let { error -> ": $error" } ?: ""}"
+                "${it.service} ${it.uri} returned ${it.statusCode ?: "no response"}${it.error?.let { error ->
+                    ": $error"
+                }.orEmpty()}"
             }
         }
         return StackSmokeResult(results)

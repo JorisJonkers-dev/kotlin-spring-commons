@@ -32,7 +32,13 @@ dependencies {
 afterEvaluate {
     tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
         violationRules {
-            rule { limit { counter = "LINE"; value = "COVEREDRATIO"; minimum = "1.00".toBigDecimal() } }
+            rule {
+                limit {
+                    counter = "LINE"
+                    value = "COVEREDRATIO"
+                    minimum = "1.00".toBigDecimal()
+                }
+            }
         }
     }
 }

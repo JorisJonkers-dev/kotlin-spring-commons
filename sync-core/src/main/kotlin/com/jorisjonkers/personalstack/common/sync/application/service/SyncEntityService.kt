@@ -2,10 +2,11 @@ package com.jorisjonkers.personalstack.common.sync.application.service
 
 import com.jorisjonkers.personalstack.common.sync.application.port.`in`.SyncEntityCommand
 import com.jorisjonkers.personalstack.common.sync.application.port.`in`.SyncEntityUseCase
-import com.jorisjonkers.personalstack.common.sync.domain.BaselineSnapshot
 import com.jorisjonkers.personalstack.common.sync.domain.Reconciliation
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteFetch
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecord
+import com.jorisjonkers.personalstack.common.sync.domain.RequeueDecision
+import com.jorisjonkers.personalstack.common.sync.domain.RunId
 import com.jorisjonkers.personalstack.common.sync.domain.SyncContext
 import com.jorisjonkers.personalstack.common.sync.domain.SyncDecision
 import com.jorisjonkers.personalstack.common.sync.domain.SyncDefinition
@@ -16,11 +17,8 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncName
 import com.jorisjonkers.personalstack.common.sync.domain.SyncOutcome
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReport
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReportStatus
-import com.jorisjonkers.personalstack.common.sync.domain.RequeueDecision
-import com.jorisjonkers.personalstack.common.sync.domain.RunId
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.IdempotencyClaim
 import com.jorisjonkers.personalstack.common.sync.domain.port.out.LockResult
-import com.jorisjonkers.personalstack.common.sync.domain.port.out.SyncTransactionContext
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -51,56 +49,85 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             matchPlan = definition.matchPlan,
             policies = definition.policies,
         )
+    private val executor = SyncDecisionExecutor(definition, clock, syncName)
 
     override fun sync(command: SyncEntityCommand<RID>): SyncReport {
         val startedAt = Instant.now(clock)
-        val context =
-            SyncContext<SCOPE>(
-                runId = RunId.new(),
-                syncName = syncName,
-                correlationId = command.correlationId,
-                source = command.source,
-                scope = null,
-                startedAt = startedAt,
-                dryRun = command.dryRun,
-            )
+        val context = context(command, startedAt)
 
         ports.observer.onRunStarted(context)
         ports.auditTrail.recordRunStarted(context)
 
-        // Idempotency: replay completed reports, reject in-progress claims.
+        val report =
+            claimIdempotency(command, context, startedAt)
+                ?: fetchRemote(command, context, startedAt).let { read ->
+                    read.failureReport ?: executeRemoteRead(command, context, startedAt, read.remoteRecord)
+                }
+        return report
+    }
+
+    private fun context(
+        command: SyncEntityCommand<RID>,
+        startedAt: Instant,
+    ): SyncContext<SCOPE> =
+        SyncContext(
+            runId = RunId.new(),
+            syncName = syncName,
+            correlationId = command.correlationId,
+            source = command.source,
+            scope = null,
+            startedAt = startedAt,
+            dryRun = command.dryRun,
+        )
+
+    private fun claimIdempotency(
+        command: SyncEntityCommand<RID>,
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+    ): SyncReport? =
         command.idempotencyKey?.let { key ->
             when (val claim = ports.idempotencyStore.claim(key, IDEMPOTENCY_TTL, context)) {
-                is IdempotencyClaim.Acquired -> Unit
+                is IdempotencyClaim.Acquired -> null
                 is IdempotencyClaim.Completed -> {
                     ports.observer.onRunCompleted(claim.report)
-                    return claim.report
+                    claim.report
                 }
-                is IdempotencyClaim.InProgress -> {
-                    val failure =
+                is IdempotencyClaim.InProgress ->
+                    finishFailed(
+                        context,
+                        startedAt,
                         SyncFailure(
                             kind = SyncFailureKind.IDEMPOTENCY_IN_PROGRESS,
                             message = claim.message,
                             retryable = true,
-                        )
-                    return finishFailed(context, startedAt, failure, command.idempotencyKey)
-                }
+                        ),
+                        key,
+                    )
             }
         }
 
-        // Fetch remote OUTSIDE the transaction.
-        val fetch = ports.remoteCatalog.fetchOne(command.externalId, context)
-        val remoteRecord: RemoteRecord<R, RID, KEY>? =
-            when (fetch) {
-                is RemoteFetch.Found -> fetch.value
-                // NOTE: a Partial single-record fetch carries a usable value; we sync it but never delete from it.
-                is RemoteFetch.Partial -> fetch.value
-                is RemoteFetch.Missing -> null // authoritative absence -> reconcile handles delete/unlink
-                is RemoteFetch.Failed -> {
-                    // A failed remote fetch must NEVER become a delete; report and requeue.
-                    return finishFailed(context, startedAt, fetch.failure, command.idempotencyKey)
-                }
-            }
+    private fun fetchRemote(
+        command: SyncEntityCommand<RID>,
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+    ): EntityRemoteRead<R, RID, KEY> =
+        when (val fetch = ports.remoteCatalog.fetchOne(command.externalId, context)) {
+            is RemoteFetch.Found -> EntityRemoteRead(fetch.value)
+            // NOTE: a Partial single-record fetch carries a usable value; we sync it but never delete from it.
+            is RemoteFetch.Partial -> EntityRemoteRead(fetch.value)
+            is RemoteFetch.Missing -> EntityRemoteRead(null)
+            is RemoteFetch.Failed ->
+                EntityRemoteRead(
+                    failureReport = finishFailed(context, startedAt, fetch.failure, command.idempotencyKey),
+                )
+        }
+
+    private fun executeRemoteRead(
+        command: SyncEntityCommand<RID>,
+        context: SyncContext<SCOPE>,
+        startedAt: Instant,
+        remoteRecord: RemoteRecord<R, RID, KEY>?,
+    ): SyncReport {
         val observedAt = remoteRecord?.observedAt ?: Instant.now(clock)
 
         val lockKey = SyncLockKey("${syncName.value}:entity:${command.externalId}")
@@ -145,132 +172,11 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             val localAggregate =
                 ports.localRepository.findByRemoteIdIncludingDeleted(command.externalId, context.scope, context)
 
-            val decision: SyncDecision<A, R, RID> =
+            val decision: SyncDecision<A, R, RID, KEY> =
                 reconciliation.reconcileOne(localAggregate, remoteRecord?.record, observedAt)
 
-            executeDecision(context, decision, this)
+            executor.execute(context, decision, this)
         }
-
-    /**
-     * Applies one decision through the mapper/repository and records its outcome. Honours dry-run by
-     * skipping all writes (save, baseline, effects, audit-outcome, relay registration).
-     */
-    @Suppress("UNCHECKED_CAST")
-    private fun executeDecision(
-        context: SyncContext<SCOPE>,
-        decision: SyncDecision<A, R, RID>,
-        tx: SyncTransactionContext,
-    ): SyncOutcome<RID> {
-        val start = Instant.now(clock)
-        val mapper = definition.mapper
-        val dryRun = context.dryRun
-
-        fun durationNow(): Duration = Duration.between(start, Instant.now(clock))
-
-        fun succeeded(): SyncOutcome<RID> =
-            SyncOutcome.Succeeded(decision.subject, decision.action, durationNow())
-
-        fun skipped(): SyncOutcome<RID> =
-            SyncOutcome.Skipped(decision.subject, decision.action, durationNow(), decision.reason)
-
-        if (dryRun) {
-            // Reconciliation already ran; report the planned decision without mutation.
-            val outcome = skipped()
-            // No audit-outcome write, no effects, no relay registration in dry-run.
-            ports.observer.onOutcome(context, outcome)
-            return outcome
-        }
-
-        // Apply the decision. The six executable types write through the mapper/repository and
-        // report `succeeded`; every other (non-executable: Equal/Ignore/Conflict) decision reaches
-        // the `else` and is reported as a skipped no-op without writing.
-        var saved: A? = null
-        val outcome: SyncOutcome<RID> =
-            when (decision) {
-                is SyncDecision.Import<*, *, *> -> {
-                    val d = decision as SyncDecision.Import<R, RID, KEY>
-                    saved = mapper.create(d.remote.record, context).let { ports.localRepository.save(it, context) }
-                    succeeded()
-                }
-                is SyncDecision.Update<*, *, *, *> -> {
-                    val d = decision as SyncDecision.Update<A, R, RID, KEY>
-                    saved = mapper.update(d.local.aggregate, d.remote.record, d.changes, context)
-                        .let { ports.localRepository.save(it, context) }
-                    succeeded()
-                }
-                is SyncDecision.Restore<*, *, *, *> -> {
-                    val d = decision as SyncDecision.Restore<A, R, RID, KEY>
-                    saved = mapper.restore(d.local.aggregate, d.remote.record, d.changes, context)
-                        .let { ports.localRepository.save(it, context) }
-                    succeeded()
-                }
-                is SyncDecision.Relink<*, *, *, *> -> {
-                    val d = decision as SyncDecision.Relink<A, R, RID, KEY>
-                    saved = mapper.relink(d.local.aggregate, d.remote.record, d.changes, context)
-                        .let { ports.localRepository.save(it, context) }
-                    succeeded()
-                }
-                is SyncDecision.Delete<*, *, *> -> {
-                    val d = decision as SyncDecision.Delete<A, RID, KEY>
-                    saved = mapper.delete(d.local.aggregate, d.signal, context)
-                        .let { ports.localRepository.save(it, context) }
-                    succeeded()
-                }
-                is SyncDecision.Unlink<*, *, *> -> {
-                    val d = decision as SyncDecision.Unlink<A, RID, KEY>
-                    saved = mapper.unlink(d.local.aggregate, d.unlinkReason, context)
-                        .let { ports.localRepository.save(it, context) }
-                    succeeded()
-                }
-                is SyncDecision.Retry -> SyncOutcome.Failed(decision.subject, decision.action, durationNow(), decision.failure)
-                else -> skipped()
-            }
-
-        // Save baseline for record-mutating actions (not Unlink, which has no remote baseline).
-        if (saved != null) {
-            val remoteForBaseline: RemoteRecord<R, RID, KEY>? =
-                when (decision) {
-                    is SyncDecision.Import<*, *, *> -> (decision as SyncDecision.Import<R, RID, KEY>).remote
-                    is SyncDecision.Update<*, *, *, *> -> (decision as SyncDecision.Update<A, R, RID, KEY>).remote
-                    is SyncDecision.Restore<*, *, *, *> -> (decision as SyncDecision.Restore<A, R, RID, KEY>).remote
-                    is SyncDecision.Relink<*, *, *, *> -> (decision as SyncDecision.Relink<A, R, RID, KEY>).remote
-                    else -> null
-                }
-            if (remoteForBaseline != null) {
-                ports.checkpointStore.saveBaseline(
-                    syncName,
-                    decision.subject,
-                    BaselineSnapshot(
-                        version = remoteForBaseline.version,
-                        fingerprint = null,
-                        capturedAt = Instant.now(clock),
-                    ),
-                )
-            }
-        }
-
-        // Persist pure effects atomically inside the transaction.
-        if (decision.effects.isNotEmpty()) {
-            ports.effectOutbox.append(context, decision.effects)
-        }
-
-        recordOutcome(context, outcome, tx)
-
-        // Relay durable effects only AFTER commit.
-        if (decision.effects.isNotEmpty()) {
-            tx.afterCommit { ports.effectOutbox.requestRelay(context) }
-        }
-        return outcome
-    }
-
-    private fun recordOutcome(
-        context: SyncContext<SCOPE>,
-        outcome: SyncOutcome<RID>,
-        @Suppress("UNUSED_PARAMETER") tx: SyncTransactionContext,
-    ) {
-        ports.auditTrail.recordOutcome(context, outcome)
-        ports.observer.onOutcome(context, outcome)
-    }
 
     private fun subjectFor(
         command: SyncEntityCommand<RID>,
@@ -328,7 +234,8 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         val requeue =
             if (outcomes.any { it is SyncOutcome.Failed && (it.failure.retryable) }) {
                 val retryAfter =
-                    outcomes.filterIsInstance<SyncOutcome.Failed<RID>>()
+                    outcomes
+                        .filterIsInstance<SyncOutcome.Failed<RID>>()
                         .firstNotNullOfOrNull { it.failure.retryAfter }
                         ?: DEFAULT_REQUEUE_DELAY
                 RequeueDecision.Later(retryAfter, "retryable failure")
@@ -349,4 +256,9 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         private val IDEMPOTENCY_TTL: Duration = Duration.ofHours(1)
         private val DEFAULT_REQUEUE_DELAY: Duration = Duration.ofMinutes(1)
     }
+
+    private data class EntityRemoteRead<R : Any, RID : Any, KEY : Any>(
+        val remoteRecord: RemoteRecord<R, RID, KEY>? = null,
+        val failureReport: SyncReport? = null,
+    )
 }

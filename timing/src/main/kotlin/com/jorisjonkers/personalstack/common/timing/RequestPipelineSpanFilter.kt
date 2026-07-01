@@ -12,6 +12,8 @@ import org.springframework.core.annotation.Order
 import org.springframework.web.filter.OncePerRequestFilter
 import java.time.Instant
 
+private const val REQUEST_PIPELINE_FILTER_ORDER_OFFSET = 10
+
 /**
  * Outer filter ordered before everything else. Collaborates with
  * `SecurityChainBoundaryFilter` (post Spring Security) and
@@ -44,7 +46,7 @@ import java.time.Instant
  * available, so 401 short-circuits inside Spring Security skip the
  * later spans gracefully.
  */
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@Order(Ordered.HIGHEST_PRECEDENCE + REQUEST_PIPELINE_FILTER_ORDER_OFFSET)
 class RequestPipelineSpanFilter(
     private val tracer: Tracer,
 ) : OncePerRequestFilter() {
@@ -109,8 +111,8 @@ class RequestPipelineSpanFilter(
             request.getAttribute(HANDLER_MAPPING_BEST_MATCHING_PATTERN_ATTRIBUTE) as? String
                 ?: request.requestURI
         return buildMap(MAX_ATTRS) {
-            put("http.method", request.method ?: "")
-            put("http.route", route ?: "")
+            put("http.method", request.method.orEmpty())
+            put("http.route", route.orEmpty())
             put("http.status_code", response.status.toLong())
         }
     }

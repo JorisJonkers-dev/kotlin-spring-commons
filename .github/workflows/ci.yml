@@ -48,8 +48,8 @@ jobs:
     with:
       java-version: '21'
       gradle-args: '--no-daemon --stacktrace'
-      lint-gradle-args: 'build'
-      test-gradle-args: 'test'
+      lint-gradle-args: 'detektMain detektTest detektIntegrationTest ktlintCheck'
+      test-gradle-args: 'test integrationTest jacocoTestCoverageVerification'
     secrets:
       # Reads the public dev.jorisjonkers convention plugins from the gradle-conventions
       # GitHub Packages registry; the default workflow token can read public org packages.

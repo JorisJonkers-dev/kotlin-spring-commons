@@ -83,7 +83,8 @@ class WebUtilitiesAutoConfigurationTest {
     @Test
     fun `nested open api schema factory creates configured customizer`() {
         val customizer =
-            WebUtilitiesAutoConfiguration.OpenApiErrorSchemasConfiguration()
+            WebUtilitiesAutoConfiguration
+                .OpenApiErrorSchemasConfiguration()
                 .openApiErrorSchemas(
                     WebUtilitiesProperties(
                         problemDetails =
@@ -93,7 +94,9 @@ class WebUtilitiesAutoConfigurationTest {
                             ),
                     ),
                 )
-        val openApi = io.swagger.v3.oas.models.OpenAPI()
+        val openApi =
+            io.swagger.v3.oas.models
+                .OpenAPI()
 
         customizer.customise(openApi)
 

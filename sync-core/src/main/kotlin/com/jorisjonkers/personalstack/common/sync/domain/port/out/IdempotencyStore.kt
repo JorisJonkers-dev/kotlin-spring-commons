@@ -23,13 +23,25 @@ interface IdempotencyStore {
         context: SyncContext<*>,
     ): IdempotencyClaim
 
-    fun complete(key: IdempotencyKey, report: SyncReport)
+    fun complete(
+        key: IdempotencyKey,
+        report: SyncReport,
+    )
 
-    fun fail(key: IdempotencyKey, failure: SyncFailure)
+    fun fail(
+        key: IdempotencyKey,
+        failure: SyncFailure,
+    )
 }
 
 sealed interface IdempotencyClaim {
     data object Acquired : IdempotencyClaim
-    data class InProgress(val message: String) : IdempotencyClaim
-    data class Completed(val report: SyncReport) : IdempotencyClaim
+
+    data class InProgress(
+        val message: String,
+    ) : IdempotencyClaim
+
+    data class Completed(
+        val report: SyncReport,
+    ) : IdempotencyClaim
 }
