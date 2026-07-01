@@ -54,7 +54,7 @@ class WidgetHarness internal constructor(
 ) {
     companion object {
         /** A deterministic missing-remote policy that DELETES (soft) the absent local. */
-        val DELETE_MISSING: MissingRemotePolicy<Widget, WidgetId, WidgetKey> =
+        val DELETE_MISSING: MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey> =
             MissingRemotePolicy { local, observedAt ->
                 val rememberedId = local.registration.rememberedRemoteId
                 if (rememberedId != null) {
@@ -73,7 +73,7 @@ class WidgetHarness internal constructor(
             }
 
         /** A deterministic missing-remote policy that UNLINKS the absent local. */
-        val UNLINK_MISSING: MissingRemotePolicy<Widget, WidgetId, WidgetKey> =
+        val UNLINK_MISSING: MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey> =
             MissingRemotePolicy { local, _ ->
                 SyncDecision.Unlink(local = local, unlinkReason = UnlinkReason.Policy("absent on remote"))
             }
@@ -85,7 +85,7 @@ class WidgetHarness internal constructor(
          */
         fun build(
             name: String = "widget",
-            missingRemotePolicy: MissingRemotePolicy<Widget, WidgetId, WidgetKey> = DELETE_MISSING,
+            missingRemotePolicy: MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey> = DELETE_MISSING,
             importPolicy: ImportPolicy<RemoteWidget> = ImportPolicy { true },
             conflictPolicy: ConflictPolicy<Widget, RemoteWidget, WidgetId, WidgetKey> = ConflictPolicy.failClosed(),
             listTransactionMode: ListTransactionMode = ListTransactionMode.PER_RECORD,

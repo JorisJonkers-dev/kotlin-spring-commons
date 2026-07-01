@@ -7,7 +7,6 @@ import com.jorisjonkers.personalstack.common.sync.domain.Reconciliation
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteChange
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteFetch
 import com.jorisjonkers.personalstack.common.sync.domain.RemotePage
-import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecord
 import com.jorisjonkers.personalstack.common.sync.domain.RequeueDecision
 import com.jorisjonkers.personalstack.common.sync.domain.RunId
 import com.jorisjonkers.personalstack.common.sync.domain.SyncContext
@@ -39,13 +38,14 @@ import java.time.Instant
  *
  * Keeps named helpers for each sync phase so transaction boundaries and callback timing stay explicit.
  */
-@Suppress("TooManyFunctions")
 class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private val definition: SyncDefinition<A, R, RID, KEY, SCOPE>,
     private val clock: Clock = Clock.systemUTC(),
 ) : SyncListUseCase<SCOPE> {
     private val ports = definition.ports
     private val syncName: SyncName = definition.name
+    private val reporter = Reporter()
+    private val refresher = DecisionRefresher()
 
     private val reconciliation =
         Reconciliation(
@@ -93,8 +93,8 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         when (val fetch = ports.remoteCatalog.fetchForScope(command.scope, context)) {
             is RemoteFetch.Found -> PageRead(PageView(fetch.value, partialFailure = null))
             is RemoteFetch.Partial -> PageRead(PageView(fetch.value, partialFailure = fetch.failure))
-            is RemoteFetch.Missing -> PageRead(failureReport = finishEmpty(context, startedAt, fetch))
-            is RemoteFetch.Failed -> PageRead(failureReport = finishFailed(context, startedAt, fetch.failure))
+            is RemoteFetch.Missing -> PageRead(failureReport = reporter.finishEmpty(context, startedAt, fetch))
+            is RemoteFetch.Failed -> PageRead(failureReport = reporter.finishFailed(context, startedAt, fetch.failure))
         }
 
     private fun executePage(
@@ -127,27 +127,12 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
                 is LockResult.Acquired -> lockResult.value
                 is LockResult.NotAcquired ->
                     listOf(
-                        SyncOutcome.Failed(
-                            subject =
-                                SyncSubject.Scope(
-                                    com.jorisjonkers.personalstack.common.sync.domain
-                                        .ScopeId(command.scope.toString()),
-                                ),
-                            action = null,
-                            duration = Duration.between(startedAt, Instant.now(clock)),
-                            failure =
-                                SyncFailure(
-                                    kind = SyncFailureKind.LOCK_UNAVAILABLE,
-                                    message = "could not acquire scope lock $lockKey",
-                                    retryable = true,
-                                    retryAfter = definition.execution.lockTimeout,
-                                ),
-                        ),
+                        reporter.lockUnavailableOutcome(command, startedAt, lockKey),
                     )
             }
 
-        val requeue = requeueFor(pageData, outcomes)
-        val report = report(context, startedAt, outcomes, requeue)
+        val requeue = reporter.requeueFor(pageData, outcomes)
+        val report = reporter.report(context, startedAt, outcomes, requeue)
         ports.observer.onRunCompleted(report)
         ports.auditTrail.recordRunCompleted(report)
         return report
@@ -157,7 +142,6 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
      * Per-record default: re-read locals once inside the lock, plan, then commit each decision separately.
      * Runtime mapper/repository failures are isolated to one failed outcome.
      */
-    @Suppress("TooGenericExceptionCaught")
     private fun runPerRecord(
         context: SyncContext<SCOPE>,
         command: SyncListCommand<SCOPE>,
@@ -170,14 +154,14 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         val plan = reconciliation.reconcileMany(locals, remotes, context)
 
         return plan.decisions.map { decision ->
-            try {
+            runCatching {
                 ports.unitOfWork.transaction {
                     // Stale-plan guard: when the decision references a remote id, re-read and re-reconcile.
-                    val refreshed = refreshDecision(context, decision, command)
+                    val refreshed = refresher.refresh(context, decision, command)
                     executor.execute(context, refreshed, this)
                 }
-            } catch (ex: RuntimeException) {
-                val failure = failureFromException(ex)
+            }.getOrElse { ex ->
+                val failure = localValidationFailure(ex)
                 val outcome =
                     SyncOutcome.Failed(decision.subject, decision.action, Duration.ZERO, failure)
                 ports.observer.onOutcome(context, outcome)
@@ -212,135 +196,133 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             }
         }
 
-    /** Re-read the subject's local aggregate by remote id and re-reconcile to guard against staleness. */
-    private fun refreshDecision(
-        context: SyncContext<SCOPE>,
-        decision: SyncDecision<A, R, RID>,
-        command: SyncListCommand<SCOPE>,
-    ): SyncDecision<A, R, RID> {
-        val remoteId = remoteIdOf(decision) ?: return decision
-        val remoteRecord = remoteRecordOf(decision)
-        val local =
-            ports.localRepository.findByRemoteIdIncludingDeleted(remoteId, command.scope, context)
-        val observedAt = remoteRecord?.observedAt ?: Instant.now(clock)
-        return reconciliation.reconcileOne(local, remoteRecord?.record, observedAt)
-    }
-
-    private fun remoteIdOf(decision: SyncDecision<A, R, RID>): RID? =
-        when (decision) {
-            is SyncDecision.Import<*, *, *> -> (decision as SyncDecision.Import<R, RID, KEY>).remote.externalId
-            is SyncDecision.Update<*, *, *, *> -> (decision as SyncDecision.Update<A, R, RID, KEY>).remote.externalId
-            is SyncDecision.Restore<*, *, *, *> -> (decision as SyncDecision.Restore<A, R, RID, KEY>).remote.externalId
-            is SyncDecision.Relink<*, *, *, *> -> (decision as SyncDecision.Relink<A, R, RID, KEY>).remote.externalId
-            is SyncDecision.Delete<*, *, *> -> (decision as SyncDecision.Delete<A, RID, KEY>).signal.remoteId
-            else -> null
-        }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun remoteRecordOf(decision: SyncDecision<A, R, RID>): RemoteRecord<R, RID, KEY>? =
-        when (decision) {
-            is SyncDecision.Import<*, *, *> -> (decision as SyncDecision.Import<R, RID, KEY>).remote
-            is SyncDecision.Update<*, *, *, *> -> (decision as SyncDecision.Update<A, R, RID, KEY>).remote
-            is SyncDecision.Restore<*, *, *, *> -> (decision as SyncDecision.Restore<A, R, RID, KEY>).remote
-            is SyncDecision.Relink<*, *, *, *> -> (decision as SyncDecision.Relink<A, R, RID, KEY>).remote
-            else -> null
-        }
-
-    private fun failureFromException(ex: RuntimeException): SyncFailure =
-        SyncFailure(
-            kind = SyncFailureKind.LOCAL_VALIDATION_FAILED,
-            message = ex.message ?: ex.javaClass.simpleName,
-            retryable = false,
-            causeClass = ex.javaClass.name,
-        )
-
-    private fun requeueFor(
-        pageData: PageView<R, RID, KEY>,
-        outcomes: List<SyncOutcome<RID>>,
-    ): RequeueDecision {
-        val retryAfter =
-            pageData.page.retryAfter
-                ?: outcomes
-                    .filterIsInstance<SyncOutcome.Failed<RID>>()
-                    .firstNotNullOfOrNull { it.failure.retryAfter }
-        return when {
-            pageData.partialFailure != null ->
-                RequeueDecision.Later(retryAfter ?: DEFAULT_REQUEUE_DELAY, "partial remote page")
-            outcomes.any { it is SyncOutcome.Failed && it.failure.retryable } ->
-                RequeueDecision.Later(retryAfter ?: DEFAULT_REQUEUE_DELAY, "retryable record failure")
-            else -> RequeueDecision.Done
+    private inner class DecisionRefresher {
+        /** Re-read the subject's local aggregate by remote id and re-reconcile to guard against staleness. */
+        fun refresh(
+            context: SyncContext<SCOPE>,
+            decision: SyncDecision<A, R, RID, KEY>,
+            command: SyncListCommand<SCOPE>,
+        ): SyncDecision<A, R, RID, KEY> {
+            val remoteRecord = decision.remoteRecord
+            val remoteId = remoteRecord?.externalId ?: decision.deleteSignal?.remoteId ?: return decision
+            val local =
+                ports.localRepository.findByRemoteIdIncludingDeleted(remoteId, command.scope, context)
+            val observedAt = remoteRecord?.observedAt ?: Instant.now(clock)
+            return reconciliation.reconcileOne(local, remoteRecord?.record, observedAt)
         }
     }
 
-    private fun finishFailed(
-        context: SyncContext<SCOPE>,
-        startedAt: Instant,
-        failure: SyncFailure,
-    ): SyncReport {
-        val outcome =
-            SyncOutcome.Failed<RID>(
-                subject = scopeSubject(context),
+    private inner class Reporter {
+        fun lockUnavailableOutcome(
+            command: SyncListCommand<SCOPE>,
+            startedAt: Instant,
+            lockKey: SyncLockKey,
+        ): SyncOutcome<RID> =
+            SyncOutcome.Failed(
+                subject =
+                    SyncSubject.Scope(
+                        com.jorisjonkers.personalstack.common.sync.domain
+                            .ScopeId(command.scope.toString()),
+                    ),
                 action = null,
                 duration = Duration.between(startedAt, Instant.now(clock)),
-                failure = failure,
-            )
-        ports.observer.onOutcome(context, outcome)
-        val report =
-            report(
-                context,
-                startedAt,
-                listOf(outcome),
-                RequeueDecision.Later(failure.retryAfter ?: DEFAULT_REQUEUE_DELAY, "remote fetch failed"),
-            )
-        ports.observer.onRunCompleted(report)
-        ports.auditTrail.recordRunCompleted(report)
-        return report
-    }
-
-    private fun finishEmpty(
-        context: SyncContext<SCOPE>,
-        startedAt: Instant,
-        fetch: RemoteFetch.Missing,
-    ): SyncReport {
-        val outcome =
-            SyncOutcome.Skipped<RID>(
-                subject = scopeSubject(context),
-                action = null,
-                duration = Duration.between(startedAt, Instant.now(clock)),
-                reason =
-                    com.jorisjonkers.personalstack.common.sync.domain.SyncReason.Policy(
-                        "remote scope missing (${fetch.reason}); not treating as authoritative empty set",
+                failure =
+                    SyncFailure(
+                        kind = SyncFailureKind.LOCK_UNAVAILABLE,
+                        message = "could not acquire scope lock $lockKey",
+                        retryable = true,
+                        retryAfter = definition.execution.lockTimeout,
                     ),
             )
-        ports.observer.onOutcome(context, outcome)
-        val report = report(context, startedAt, listOf(outcome), RequeueDecision.Done)
-        ports.observer.onRunCompleted(report)
-        ports.auditTrail.recordRunCompleted(report)
-        return report
-    }
 
-    private fun scopeSubject(context: SyncContext<SCOPE>): SyncSubject<RID> =
-        context.scope?.let {
-            SyncSubject.Scope(
-                com.jorisjonkers.personalstack.common.sync.domain
-                    .ScopeId(it.toString()),
+        fun requeueFor(
+            pageData: PageView<R, RID, KEY>,
+            outcomes: List<SyncOutcome<RID>>,
+        ): RequeueDecision {
+            val retryAfter =
+                pageData.page.retryAfter
+                    ?: outcomes
+                        .filterIsInstance<SyncOutcome.Failed<RID>>()
+                        .firstNotNullOfOrNull { it.failure.retryAfter }
+            return when {
+                pageData.partialFailure != null ->
+                    RequeueDecision.Later(retryAfter ?: DEFAULT_REQUEUE_DELAY, "partial remote page")
+                outcomes.any { it is SyncOutcome.Failed && it.failure.retryable } ->
+                    RequeueDecision.Later(retryAfter ?: DEFAULT_REQUEUE_DELAY, "retryable record failure")
+                else -> RequeueDecision.Done
+            }
+        }
+
+        fun finishFailed(
+            context: SyncContext<SCOPE>,
+            startedAt: Instant,
+            failure: SyncFailure,
+        ): SyncReport {
+            val outcome =
+                SyncOutcome.Failed<RID>(
+                    subject = scopeSubject(context),
+                    action = null,
+                    duration = Duration.between(startedAt, Instant.now(clock)),
+                    failure = failure,
+                )
+            ports.observer.onOutcome(context, outcome)
+            val report =
+                report(
+                    context,
+                    startedAt,
+                    listOf(outcome),
+                    RequeueDecision.Later(failure.retryAfter ?: DEFAULT_REQUEUE_DELAY, "remote fetch failed"),
+                )
+            ports.observer.onRunCompleted(report)
+            ports.auditTrail.recordRunCompleted(report)
+            return report
+        }
+
+        fun finishEmpty(
+            context: SyncContext<SCOPE>,
+            startedAt: Instant,
+            fetch: RemoteFetch.Missing,
+        ): SyncReport {
+            val outcome =
+                SyncOutcome.Skipped<RID>(
+                    subject = scopeSubject(context),
+                    action = null,
+                    duration = Duration.between(startedAt, Instant.now(clock)),
+                    reason =
+                        com.jorisjonkers.personalstack.common.sync.domain.SyncReason.Policy(
+                            "remote scope missing (${fetch.reason}); not treating as authoritative empty set",
+                        ),
+                )
+            ports.observer.onOutcome(context, outcome)
+            val report = report(context, startedAt, listOf(outcome), RequeueDecision.Done)
+            ports.observer.onRunCompleted(report)
+            ports.auditTrail.recordRunCompleted(report)
+            return report
+        }
+
+        fun report(
+            context: SyncContext<SCOPE>,
+            startedAt: Instant,
+            outcomes: List<SyncOutcome<RID>>,
+            requeue: RequeueDecision,
+        ): SyncReport =
+            SyncReport(
+                context = context,
+                status = SyncReportStatuses.of(outcomes),
+                startedAt = startedAt,
+                completedAt = Instant.now(clock),
+                outcomes = outcomes,
+                requeue = requeue,
             )
-        } ?: SyncSubject.Unknown
 
-    private fun report(
-        context: SyncContext<SCOPE>,
-        startedAt: Instant,
-        outcomes: List<SyncOutcome<RID>>,
-        requeue: RequeueDecision,
-    ): SyncReport =
-        SyncReport(
-            context = context,
-            status = SyncReportStatuses.of(outcomes),
-            startedAt = startedAt,
-            completedAt = Instant.now(clock),
-            outcomes = outcomes,
-            requeue = requeue,
-        )
+        private fun scopeSubject(context: SyncContext<SCOPE>): SyncSubject<RID> =
+            context.scope?.let {
+                SyncSubject.Scope(
+                    com.jorisjonkers.personalstack.common.sync.domain
+                        .ScopeId(it.toString()),
+                )
+            } ?: SyncSubject.Unknown
+    }
 
     private data class PageView<R : Any, RID : Any, KEY : Any>(
         val page: RemotePage<R, RID, KEY>,
@@ -356,3 +338,11 @@ class SyncListService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         private val DEFAULT_REQUEUE_DELAY: Duration = Duration.ofMinutes(1)
     }
 }
+
+private fun localValidationFailure(ex: Throwable): SyncFailure =
+    SyncFailure(
+        kind = SyncFailureKind.LOCAL_VALIDATION_FAILED,
+        message = ex.message ?: ex.javaClass.simpleName,
+        retryable = false,
+        causeClass = ex.javaClass.name,
+    )

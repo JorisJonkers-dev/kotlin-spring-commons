@@ -2,6 +2,7 @@ package com.jorisjonkers.personalstack.common.sync.application.service
 
 import com.jorisjonkers.personalstack.common.sync.domain.BaselineSnapshot
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteRecord
+import com.jorisjonkers.personalstack.common.sync.domain.SyncAction
 import com.jorisjonkers.personalstack.common.sync.domain.SyncContext
 import com.jorisjonkers.personalstack.common.sync.domain.SyncDecision
 import com.jorisjonkers.personalstack.common.sync.domain.SyncDefinition
@@ -21,10 +22,9 @@ internal class SyncDecisionExecutor<A : Any, R : Any, RID : Any, KEY : Any, SCOP
     private val ports = definition.ports
     private val mapper = definition.mapper
 
-    @Suppress("UNCHECKED_CAST")
     fun execute(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision<A, R, RID>,
+        decision: SyncDecision<A, R, RID, KEY>,
         tx: SyncTransactionContext,
     ): SyncOutcome<RID> {
         val start = Instant.now(clock)
@@ -52,37 +52,29 @@ internal class SyncDecisionExecutor<A : Any, R : Any, RID : Any, KEY : Any, SCOP
         return outcome
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun applyDecision(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision<A, R, RID>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> =
-        when (decision) {
-            is SyncDecision.Import<*, *, *> ->
-                importOutcome(
-                    context,
-                    decision as SyncDecision.Import<R, RID, KEY>,
-                    start,
-                )
-            is SyncDecision.Update<*, *, *, *> ->
-                updateOutcome(context, decision as SyncDecision.Update<A, R, RID, KEY>, start)
-            is SyncDecision.Restore<*, *, *, *> ->
-                restoreOutcome(context, decision as SyncDecision.Restore<A, R, RID, KEY>, start)
-            is SyncDecision.Relink<*, *, *, *> ->
-                relinkOutcome(context, decision as SyncDecision.Relink<A, R, RID, KEY>, start)
-            is SyncDecision.Delete<*, *, *> ->
-                deleteOutcome(context, decision as SyncDecision.Delete<A, RID, KEY>, start)
-            is SyncDecision.Unlink<*, *, *> ->
-                unlinkOutcome(context, decision as SyncDecision.Unlink<A, RID, KEY>, start)
-            is SyncDecision.Retry ->
+        when (decision.action) {
+            SyncAction.IMPORT -> importOutcome(context, decision, start)
+            SyncAction.UPDATE -> updateOutcome(context, decision, start)
+            SyncAction.RESTORE -> restoreOutcome(context, decision, start)
+            SyncAction.RELINK -> relinkOutcome(context, decision, start)
+            SyncAction.DELETE -> deleteOutcome(context, decision, start)
+            SyncAction.UNLINK -> unlinkOutcome(context, decision, start)
+            SyncAction.RETRY ->
                 SyncOutcome.Failed(
                     decision.subject,
                     decision.action,
                     Duration.between(start, Instant.now(clock)),
-                    decision.failure,
+                    requireNotNull(decision.failure) { "retry decision must carry a failure" },
                 )
-            else ->
+            SyncAction.EQUAL,
+            SyncAction.IGNORE,
+            SyncAction.CONFLICT,
+            ->
                 SyncOutcome.Skipped(
                     decision.subject,
                     decision.action,
@@ -93,68 +85,82 @@ internal class SyncDecisionExecutor<A : Any, R : Any, RID : Any, KEY : Any, SCOP
 
     private fun importOutcome(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision.Import<R, RID, KEY>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> {
-        ports.localRepository.save(mapper.create(decision.remote.record, context), context)
-        saveBaseline(decision.subject, decision.remote)
+        val remote = requireNotNull(decision.remoteRecord) { "import decision must carry a remote record" }
+        ports.localRepository.save(mapper.create(remote.record, context), context)
+        saveBaseline(decision.subject, remote)
         return SyncOutcome.Succeeded(decision.subject, decision.action, Duration.between(start, Instant.now(clock)))
     }
 
     private fun updateOutcome(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision.Update<A, R, RID, KEY>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> {
+        val local = requireNotNull(decision.localRecord) { "update decision must carry a local record" }
+        val remote = requireNotNull(decision.remoteRecord) { "update decision must carry a remote record" }
+        val changes = requireNotNull(decision.changes) { "update decision must carry changes" }
         ports.localRepository.save(
-            mapper.update(decision.local.aggregate, decision.remote.record, decision.changes, context),
+            mapper.update(local.aggregate, remote.record, changes, context),
             context,
         )
-        saveBaseline(decision.subject, decision.remote)
+        saveBaseline(decision.subject, remote)
         return SyncOutcome.Succeeded(decision.subject, decision.action, Duration.between(start, Instant.now(clock)))
     }
 
     private fun restoreOutcome(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision.Restore<A, R, RID, KEY>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> {
+        val local = requireNotNull(decision.localRecord) { "restore decision must carry a local record" }
+        val remote = requireNotNull(decision.remoteRecord) { "restore decision must carry a remote record" }
+        val changes = requireNotNull(decision.changes) { "restore decision must carry changes" }
         ports.localRepository.save(
-            mapper.restore(decision.local.aggregate, decision.remote.record, decision.changes, context),
+            mapper.restore(local.aggregate, remote.record, changes, context),
             context,
         )
-        saveBaseline(decision.subject, decision.remote)
+        saveBaseline(decision.subject, remote)
         return SyncOutcome.Succeeded(decision.subject, decision.action, Duration.between(start, Instant.now(clock)))
     }
 
     private fun relinkOutcome(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision.Relink<A, R, RID, KEY>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> {
+        val local = requireNotNull(decision.localRecord) { "relink decision must carry a local record" }
+        val remote = requireNotNull(decision.remoteRecord) { "relink decision must carry a remote record" }
+        val changes = requireNotNull(decision.changes) { "relink decision must carry changes" }
         ports.localRepository.save(
-            mapper.relink(decision.local.aggregate, decision.remote.record, decision.changes, context),
+            mapper.relink(local.aggregate, remote.record, changes, context),
             context,
         )
-        saveBaseline(decision.subject, decision.remote)
+        saveBaseline(decision.subject, remote)
         return SyncOutcome.Succeeded(decision.subject, decision.action, Duration.between(start, Instant.now(clock)))
     }
 
     private fun deleteOutcome(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision.Delete<A, RID, KEY>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> {
-        ports.localRepository.save(mapper.delete(decision.local.aggregate, decision.signal, context), context)
+        val local = requireNotNull(decision.localRecord) { "delete decision must carry a local record" }
+        val signal = requireNotNull(decision.deleteSignal) { "delete decision must carry a signal" }
+        ports.localRepository.save(mapper.delete(local.aggregate, signal, context), context)
         return SyncOutcome.Succeeded(decision.subject, decision.action, Duration.between(start, Instant.now(clock)))
     }
 
     private fun unlinkOutcome(
         context: SyncContext<SCOPE>,
-        decision: SyncDecision.Unlink<A, RID, KEY>,
+        decision: SyncDecision<A, R, RID, KEY>,
         start: Instant,
     ): SyncOutcome<RID> {
-        ports.localRepository.save(mapper.unlink(decision.local.aggregate, decision.unlinkReason, context), context)
+        val local = requireNotNull(decision.localRecord) { "unlink decision must carry a local record" }
+        val reason = requireNotNull(decision.unlinkReason) { "unlink decision must carry a reason" }
+        ports.localRepository.save(mapper.unlink(local.aggregate, reason, context), context)
         return SyncOutcome.Succeeded(decision.subject, decision.action, Duration.between(start, Instant.now(clock)))
     }
 

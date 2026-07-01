@@ -53,8 +53,7 @@ import java.time.Duration
 import java.time.Instant
 
 // Structural threshold: this suite keeps application-service scenarios together to share the sync harness.
-@Suppress("LargeClass")
-class ApplicationServiceTest {
+class ApplicationCommandServiceTest {
     @Test
     fun `entity command covers defaults and generated members`() {
         val command = SyncEntityCommand(externalId = WidgetId("entity-default"), source = SyncTriggerSource.TEST)
@@ -152,7 +151,9 @@ class ApplicationServiceTest {
         assertThat(SyncReportStatuses.of(listOf(conflict, succeeded))).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(SyncReportStatuses.of(listOf(skipped))).isEqualTo(SyncReportStatus.SKIPPED)
     }
+}
 
+class SyncEntityApplicationServiceTest {
     @Test
     fun `entity dry run reports planned import without writes`() {
         val harness = WidgetHarness.build()
@@ -544,10 +545,11 @@ class ApplicationServiceTest {
         assertThat(harness.unitOfWork.afterCommitRun).isEqualTo(1)
         assertThat(harness.effectOutbox.relayRequests).isEqualTo(1)
     }
+}
 
-    @Test
+class SyncListApplicationServiceTest {
     // Structural threshold: one scenario deliberately exercises every list decision branch in order.
-    @Suppress("LongMethod")
+    @Test
     fun `list per record executes import update equal restore relink and delete decisions`() {
         val scope = WidgetScope("list-decisions")
         val harness = WidgetHarness.build(listTransactionMode = ListTransactionMode.PER_RECORD)
@@ -591,31 +593,7 @@ class ApplicationServiceTest {
                 SyncListCommand(scope = scope, source = SyncTriggerSource.TEST),
             )
 
-        assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
-        assertThat(report.outcomes.map { it.action })
-            .contains(
-                SyncAction.IMPORT,
-                SyncAction.UPDATE,
-                SyncAction.EQUAL,
-                SyncAction.RESTORE,
-                SyncAction.RELINK,
-                SyncAction.DELETE,
-            )
-        assertThat(report.outcomes.filterIsInstance<SyncOutcome.Succeeded<*>>()).hasSize(5)
-        assertThat(
-            report.outcomes
-                .filterIsInstance<SyncOutcome.Skipped<*>>()
-                .single()
-                .action,
-        ).isEqualTo(SyncAction.EQUAL)
-        assertThat(harness.repository.saved).hasSize(5)
-        assertThat(harness.checkpointStore.savedBaselines).hasSize(4)
-        assertThat(
-            harness.repository.rows
-                .single { it.registration.rememberedRemoteId == deleteId }
-                .deleted,
-        ).isTrue()
-        assertThat(harness.unitOfWork.transactionCount).isEqualTo(7)
+        assertListDecisionOutcomes(report, harness, deleteId)
     }
 
     @Test
@@ -908,7 +886,9 @@ class ApplicationServiceTest {
         assertThat(harness.auditTrail.outcomes).isEmpty()
         assertThat(harness.observer.outcomes).containsExactly(outcome)
     }
+}
 
+class SpawnApplicationServiceTest {
     @Test
     fun `spawn uses stored cursor enqueues page changes advances cursor and relays`() {
         val scope = WidgetScope("spawn-stored")
@@ -1162,208 +1142,237 @@ class ApplicationServiceTest {
         assertThat(policyMessage(outcome)).contains("cursorAdvanced=false")
         assertThat(harness.effectOutbox.relayRequests).isEqualTo(1)
     }
+}
 
-    private class FailingUpdateMapper(
-        private val failedId: WidgetId,
-    ) : SyncMapper<Widget, RemoteWidget, WidgetScope> {
-        override fun create(
-            remote: RemoteWidget,
-            context: SyncContext<WidgetScope>,
-        ): Widget = WidgetMapper.create(remote, context)
+private class FailingUpdateMapper(
+    private val failedId: WidgetId,
+) : SyncMapper<Widget, RemoteWidget, WidgetId, WidgetScope> {
+    override fun create(
+        remote: RemoteWidget,
+        context: SyncContext<WidgetScope>,
+    ): Widget = WidgetMapper.create(remote, context)
 
-        override fun update(
-            local: Widget,
-            remote: RemoteWidget,
-            changes: ChangeSet,
-            context: SyncContext<WidgetScope>,
-        ): Widget {
-            if (remote.id == failedId) {
-                throw IllegalStateException("rejecting ${remote.id.value}")
-            }
-            return WidgetMapper.update(local, remote, changes, context)
+    override fun update(
+        local: Widget,
+        remote: RemoteWidget,
+        changes: ChangeSet,
+        context: SyncContext<WidgetScope>,
+    ): Widget {
+        if (remote.id == failedId) {
+            throw IllegalStateException("rejecting ${remote.id.value}")
         }
-
-        override fun restore(
-            local: Widget,
-            remote: RemoteWidget,
-            changes: ChangeSet,
-            context: SyncContext<WidgetScope>,
-        ): Widget = WidgetMapper.restore(local, remote, changes, context)
-
-        override fun relink(
-            local: Widget,
-            remote: RemoteWidget,
-            changes: ChangeSet,
-            context: SyncContext<WidgetScope>,
-        ): Widget = WidgetMapper.relink(local, remote, changes, context)
-
-        override fun delete(
-            local: Widget,
-            signal: RemoteDeleteSignal<*>,
-            context: SyncContext<WidgetScope>,
-        ): Widget = WidgetMapper.delete(local, signal, context)
-
-        override fun unlink(
-            local: Widget,
-            reason: UnlinkReason,
-            context: SyncContext<WidgetScope>,
-        ): Widget = WidgetMapper.unlink(local, reason, context)
+        return WidgetMapper.update(local, remote, changes, context)
     }
 
-    private companion object {
-        val FIXED: Instant = Instant.parse("2026-06-30T00:00:00Z")
+    override fun restore(
+        local: Widget,
+        remote: RemoteWidget,
+        changes: ChangeSet,
+        context: SyncContext<WidgetScope>,
+    ): Widget = WidgetMapper.restore(local, remote, changes, context)
 
-        // Private service data classes cannot be directly instantiated; their generated members are
-        // only reachable through service execution.
-        // SyncEntityService.finalizeIdempotency's failed+partial path is unreachable with one entity outcome.
+    override fun relink(
+        local: Widget,
+        remote: RemoteWidget,
+        changes: ChangeSet,
+        context: SyncContext<WidgetScope>,
+    ): Widget = WidgetMapper.relink(local, remote, changes, context)
 
-        fun remoteRecord(
-            id: String,
-            sku: String = "SKU-$id",
-            name: String = "Widget $id",
-            lifecycle: RemoteRecordLifecycle = RemoteRecordLifecycle.ACTIVE,
-            importable: Boolean = true,
-            version: VersionStamp? = null,
-            observedAt: Instant? = null,
-        ): RemoteRecord<RemoteWidget, WidgetId, WidgetKey> {
-            val widgetId = WidgetId(id)
-            val remote =
-                RemoteWidget(
-                    id = widgetId,
-                    sku = sku,
-                    name = name,
-                    lifecycle = lifecycle,
-                    importable = importable,
-                    version = version,
-                    observedAt = observedAt,
-                )
-            return RemoteRecord(
-                record = remote,
-                externalId = widgetId,
-                keys = setOf(WidgetKey.Remote(widgetId), WidgetKey.Sku(sku)),
-                lifecycle = lifecycle,
-                importable = importable,
-                version = version,
-                observedAt = observedAt,
-            )
-        }
+    override fun delete(
+        local: Widget,
+        signal: RemoteDeleteSignal<WidgetId>,
+        context: SyncContext<WidgetScope>,
+    ): Widget = WidgetMapper.delete(local, signal, context)
 
-        fun remotePage(
-            changes: List<RemoteChange<RemoteWidget, WidgetId, WidgetKey>> = emptyList(),
-            nextCursor: SyncCursor? = null,
-            highWatermark: SyncCursor? = null,
-            retryAfter: Duration? = null,
-        ): RemotePage<RemoteWidget, WidgetId, WidgetKey> =
-            RemotePage(
-                changes = changes,
-                nextCursor = nextCursor,
-                highWatermark = highWatermark,
-                retryAfter = retryAfter,
-            )
+    override fun unlink(
+        local: Widget,
+        reason: UnlinkReason,
+        context: SyncContext<WidgetScope>,
+    ): Widget = WidgetMapper.unlink(local, reason, context)
+}
 
-        fun upsert(
-            record: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>,
-        ): RemoteChange<RemoteWidget, WidgetId, WidgetKey> = RemoteChange.Upsert(record)
+val FIXED: Instant = Instant.parse("2026-06-30T00:00:00Z")
 
-        fun deleteChange(id: String): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
-            RemoteChange.Delete(
-                signal =
-                    RemoteDeleteSignal.ExplicitDelete(
-                        remoteId = WidgetId(id),
-                        deletedAt = null,
-                        version = null,
-                    ),
+// Private service data classes cannot be directly instantiated; their generated members are
+// only reachable through service execution.
+// SyncEntityService.finalizeIdempotency's failed+partial path is unreachable with one entity outcome.
+
+fun remoteRecord(
+    id: String,
+    sku: String = "SKU-$id",
+    name: String = "Widget $id",
+    lifecycle: RemoteRecordLifecycle = RemoteRecordLifecycle.ACTIVE,
+    importable: Boolean = true,
+    version: VersionStamp? = null,
+    observedAt: Instant? = null,
+): RemoteRecord<RemoteWidget, WidgetId, WidgetKey> {
+    val widgetId = WidgetId(id)
+    val remote =
+        RemoteWidget(
+            id = widgetId,
+            sku = sku,
+            name = name,
+            lifecycle = lifecycle,
+            importable = importable,
+            version = version,
+            observedAt = observedAt,
+        )
+    return RemoteRecord(
+        record = remote,
+        externalId = widgetId,
+        keys = setOf(WidgetKey.Remote(widgetId), WidgetKey.Sku(sku)),
+        lifecycle = lifecycle,
+        importable = importable,
+        version = version,
+        observedAt = observedAt,
+    )
+}
+
+fun remotePage(
+    changes: List<RemoteChange<RemoteWidget, WidgetId, WidgetKey>> = emptyList(),
+    nextCursor: SyncCursor? = null,
+    highWatermark: SyncCursor? = null,
+    retryAfter: Duration? = null,
+): RemotePage<RemoteWidget, WidgetId, WidgetKey> =
+    RemotePage(
+        changes = changes,
+        nextCursor = nextCursor,
+        highWatermark = highWatermark,
+        retryAfter = retryAfter,
+    )
+
+fun upsert(record: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
+    RemoteChange.Upsert(record)
+
+fun deleteChange(id: String): RemoteChange<RemoteWidget, WidgetId, WidgetKey> =
+    RemoteChange.Delete(
+        signal =
+            RemoteDeleteSignal.ExplicitDelete(
+                remoteId = WidgetId(id),
+                deletedAt = null,
                 version = null,
-            )
+            ),
+        version = null,
+    )
 
-        fun unlinkedWidget(
-            localId: String,
-            remoteId: WidgetId,
-            sku: String,
-            name: String,
-            scope: WidgetScope = WidgetScope("default"),
-        ): Widget {
-            val linked = Widget.linked(localId, remoteId, sku, name, scope, FIXED)
-            return linked.copy(registration = linked.registration.unlink(UnlinkReason.ManualDetach, FIXED))
-        }
+fun unlinkedWidget(
+    localId: String,
+    remoteId: WidgetId,
+    sku: String,
+    name: String,
+    scope: WidgetScope = WidgetScope("default"),
+): Widget {
+    val linked = Widget.linked(localId, remoteId, sku, name, scope, FIXED)
+    return linked.copy(registration = linked.registration.unlink(FIXED))
+}
 
-        fun failure(
-            kind: SyncFailureKind,
-            retryable: Boolean,
-            retryAfter: Duration? = null,
-            message: String = kind.name,
-        ): SyncFailure = SyncFailure(kind = kind, message = message, retryable = retryable, retryAfter = retryAfter)
+fun failure(
+    kind: SyncFailureKind,
+    retryable: Boolean,
+    retryAfter: Duration? = null,
+    message: String = kind.name,
+): SyncFailure = SyncFailure(kind = kind, message = message, retryable = retryable, retryAfter = retryAfter)
 
-        fun retryMissingPolicy(retryAfter: Duration): MissingRemotePolicy<Widget, WidgetId, WidgetKey> =
-            MissingRemotePolicy { local, _ ->
-                SyncDecision.Retry(
-                    subject =
-                        local.registration.rememberedRemoteId
-                            ?.let { SyncSubject.Pair(local.localId, it) }
-                            ?: SyncSubject.Unknown,
-                    delay = retryAfter,
-                    failure =
-                        failure(
-                            kind = SyncFailureKind.REMOTE_RATE_LIMITED,
-                            retryable = true,
-                            retryAfter = retryAfter,
-                        ),
-                )
-            }
-
-        fun recalculatingUnlinkPolicy(): MissingRemotePolicy<Widget, WidgetId, WidgetKey> =
-            MissingRemotePolicy { local, _ ->
-                val subject = local.localId?.let { SyncSubject.Local(it) } ?: SyncSubject.Unknown
-                SyncDecision.Unlink(
-                    local = local,
-                    unlinkReason = UnlinkReason.Policy("local-only"),
-                    effects =
-                        listOf(
-                            SyncEffect.Recalculate(
-                                key = "recalculate:${local.localId?.value ?: "unknown"}",
-                                subject = subject,
-                                reason = "local-only",
-                            ),
-                        ),
-                )
-            }
-
-        fun completedReport(status: SyncReportStatus): SyncReport =
-            SyncReport(
-                context = SyncFixtures.context(),
-                status = status,
-                startedAt = FIXED,
-                completedAt = FIXED,
-                outcomes = emptyList(),
-            )
-
-        fun succeeded(
-            action: SyncAction,
-            id: String,
-        ): SyncOutcome.Succeeded<WidgetId> =
-            SyncOutcome.Succeeded(
-                subject = SyncSubject.Remote(WidgetId(id)),
-                action = action,
-                duration = Duration.ZERO,
-            )
-
-        fun failed(
-            action: SyncAction,
-            retryable: Boolean,
-            id: String,
-        ): SyncOutcome.Failed<WidgetId> =
-            SyncOutcome.Failed(
-                subject = SyncSubject.Remote(WidgetId(id)),
-                action = action,
-                duration = Duration.ZERO,
-                failure = failure(SyncFailureKind.UNKNOWN, retryable = retryable),
-            )
-
-        fun later(report: SyncReport): RequeueDecision.Later = report.requeue as RequeueDecision.Later
-
-        fun policyMessage(outcome: SyncOutcome.Skipped<*>): String = (outcome.reason as SyncReason.Policy).message
-
-        fun enqueuedIds(effects: List<SyncEffect>): List<Any?> =
-            effects.filterIsInstance<SyncEffect.EnqueueEntitySync<*>>().map { it.externalId }
+fun retryMissingPolicy(retryAfter: Duration): MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey> =
+    MissingRemotePolicy { local, _ ->
+        SyncDecision.Retry(
+            subject =
+                local.registration.rememberedRemoteId
+                    ?.let { SyncSubject.Pair(local.localId, it) }
+                    ?: SyncSubject.Unknown,
+            delay = retryAfter,
+            failure =
+                failure(
+                    kind = SyncFailureKind.REMOTE_RATE_LIMITED,
+                    retryable = true,
+                    retryAfter = retryAfter,
+                ),
+        )
     }
+
+fun recalculatingUnlinkPolicy(): MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey> =
+    MissingRemotePolicy { local, _ ->
+        val subject = local.localId?.let { SyncSubject.Local(it) } ?: SyncSubject.Unknown
+        SyncDecision.Unlink(
+            local = local,
+            unlinkReason = UnlinkReason.Policy("local-only"),
+            effects =
+                listOf(
+                    SyncEffect.Recalculate(
+                        key = "recalculate:${local.localId?.value ?: "unknown"}",
+                        subject = subject,
+                        reason = "local-only",
+                    ),
+                ),
+        )
+    }
+
+fun completedReport(status: SyncReportStatus): SyncReport =
+    SyncReport(
+        context = SyncFixtures.context(),
+        status = status,
+        startedAt = FIXED,
+        completedAt = FIXED,
+        outcomes = emptyList(),
+    )
+
+fun succeeded(
+    action: SyncAction,
+    id: String,
+): SyncOutcome.Succeeded<WidgetId> =
+    SyncOutcome.Succeeded(
+        subject = SyncSubject.Remote(WidgetId(id)),
+        action = action,
+        duration = Duration.ZERO,
+    )
+
+fun failed(
+    action: SyncAction,
+    retryable: Boolean,
+    id: String,
+): SyncOutcome.Failed<WidgetId> =
+    SyncOutcome.Failed(
+        subject = SyncSubject.Remote(WidgetId(id)),
+        action = action,
+        duration = Duration.ZERO,
+        failure = failure(SyncFailureKind.UNKNOWN, retryable = retryable),
+    )
+
+fun later(report: SyncReport): RequeueDecision.Later = report.requeue as RequeueDecision.Later
+
+fun policyMessage(outcome: SyncOutcome.Skipped<*>): String = (outcome.reason as SyncReason.Policy).message
+
+fun enqueuedIds(effects: List<SyncEffect>): List<Any?> =
+    effects.filterIsInstance<SyncEffect.EnqueueEntitySync<*>>().map { it.externalId }
+
+private fun assertListDecisionOutcomes(
+    report: SyncReport,
+    harness: WidgetHarness,
+    deleteId: WidgetId,
+) {
+    assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
+    assertThat(report.outcomes.map { it.action })
+        .contains(
+            SyncAction.IMPORT,
+            SyncAction.UPDATE,
+            SyncAction.EQUAL,
+            SyncAction.RESTORE,
+            SyncAction.RELINK,
+            SyncAction.DELETE,
+        )
+    assertThat(report.outcomes.filterIsInstance<SyncOutcome.Succeeded<*>>()).hasSize(5)
+    assertThat(
+        report.outcomes
+            .filterIsInstance<SyncOutcome.Skipped<*>>()
+            .single()
+            .action,
+    ).isEqualTo(SyncAction.EQUAL)
+    assertThat(harness.repository.saved).hasSize(5)
+    assertThat(harness.checkpointStore.savedBaselines).hasSize(4)
+    assertThat(
+        harness.repository.rows
+            .single { it.registration.rememberedRemoteId == deleteId }
+            .deleted,
+    ).isTrue()
+    assertThat(harness.unitOfWork.transactionCount).isEqualTo(7)
 }

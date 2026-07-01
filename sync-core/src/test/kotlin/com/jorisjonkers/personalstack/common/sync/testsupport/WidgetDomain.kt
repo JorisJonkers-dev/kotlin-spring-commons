@@ -208,7 +208,7 @@ object WidgetDiffer : SyncDiffer<Widget, RemoteWidget> {
 }
 
 /** Anti-corruption mapper producing new [Widget] states for each executable action. */
-object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetScope> {
+object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetId, WidgetScope> {
     override fun create(
         remote: RemoteWidget,
         context: SyncContext<WidgetScope>,
@@ -266,20 +266,17 @@ object WidgetMapper : SyncMapper<Widget, RemoteWidget, WidgetScope> {
 
     override fun delete(
         local: Widget,
-        signal: RemoteDeleteSignal<*>,
+        signal: RemoteDeleteSignal<WidgetId>,
         context: SyncContext<WidgetScope>,
-    ): Widget {
-        @Suppress("UNCHECKED_CAST")
-        val typed = signal as RemoteDeleteSignal<WidgetId>
-        return local.copy(
+    ): Widget =
+        local.copy(
             deleted = true,
-            registration = local.registration.markRemoteDeleted(typed, context.startedAt),
+            registration = local.registration.markRemoteDeleted(signal, context.startedAt),
         )
-    }
 
     override fun unlink(
         local: Widget,
         reason: UnlinkReason,
         context: SyncContext<WidgetScope>,
-    ): Widget = local.copy(registration = local.registration.unlink(reason, context.startedAt))
+    ): Widget = local.copy(registration = local.registration.unlink(context.startedAt))
 }

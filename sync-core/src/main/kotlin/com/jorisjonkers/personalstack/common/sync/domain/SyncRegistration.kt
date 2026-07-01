@@ -77,18 +77,12 @@ data class SyncRegistration<RID : Any>(
         )
 
     /** Drop the active link while remembering the remote id, recording why. */
-    fun unlink(
-        // Reason is carried by the decision/audit trail; registration stores only lifecycle state.
-        @Suppress("UnusedParameter")
-        reason: UnlinkReason,
-        at: Instant,
-    ): SyncRegistration<RID> =
+    fun unlink(at: Instant): SyncRegistration<RID> =
         copy(
             remoteId = null,
             rememberedRemoteId = rememberedRemoteId ?: remoteId,
             lifecycle = SyncRegistrationLifecycle.UNLINKED,
             changedAt = at,
-            // NOTE: reason is carried by the decision/audit trail, not retained on the registration.
             version = version,
         )
 

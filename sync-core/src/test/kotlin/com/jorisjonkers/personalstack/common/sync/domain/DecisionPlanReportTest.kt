@@ -14,149 +14,20 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
 
+private typealias WidgetDecision = SyncDecision<Widget, RemoteWidget, WidgetId, WidgetKey>
+
 class DecisionPlanReportTest {
     private val remoteId = WidgetId("w-1")
     private val otherRemoteId = WidgetId("w-2")
     private val changedAt = Instant.parse("2026-06-30T12:00:00Z")
 
     @Test
-    // Structural threshold: this generated-contract test enumerates every decision variant together.
-    @Suppress("LongMethod")
     fun `sync actions reasons subjects and decisions expose their default contract`() {
-        val local = localRecord()
-        val remote = remoteRecord()
-        val changes = WidgetDiffer.diff(local.aggregate, remote.record)
-        val deleteSignal =
-            RemoteDeleteSignal.MissingFromAuthoritativeList(remoteId = remoteId, observedAt = changedAt)
-        val effect =
-            SyncEffect.EnqueueEntitySync(
-                key = "enqueue-w-2",
-                syncName = SyncName("widget"),
-                externalId = otherRemoteId,
-            )
-        val failure =
-            SyncFailure(
-                kind = SyncFailureKind.REMOTE_TIMEOUT,
-                message = "remote timed out",
-                retryable = true,
-                retryAfter = Duration.ofSeconds(3),
-                causeClass = "TimeoutException",
-            )
-        val conflict =
-            SyncConflict(
-                subject = SyncSubject.Pair(local.localId, remoteId),
-                kind = SyncConflictKind.LINK_MISMATCH,
-                local = local,
-                remote = remote,
-                message = "linked to a different remote",
-            )
+        val variants = decisionVariants()
 
-        val import = SyncDecision.Import(remote = remote)
-        val update = SyncDecision.Update(local = local, remote = remote, changes = changes, effects = listOf(effect))
-        val equal = SyncDecision.Equal(local = local, remote = remote)
-        val delete = SyncDecision.Delete(local = local, signal = deleteSignal)
-        val unlinkRemembered = SyncDecision.Unlink(local = local, unlinkReason = UnlinkReason.Policy("remote absent"))
-        val unlinkLocalOnly =
-            SyncDecision.Unlink(
-                local = localRecord(Widget.neverLinked("local-new", "SKU-NEW", "New")),
-                unlinkReason = UnlinkReason.ManualDetach,
-            )
-        val unlinkUnknown =
-            SyncDecision.Unlink(
-                local =
-                    LocalRecord<Widget, WidgetId, WidgetKey>(
-                        aggregate = Widget.neverLinked("local-unknown", "SKU-UNKNOWN", "Unknown"),
-                        localId = null,
-                        registration =
-                            SyncRegistration<WidgetId>(
-                                remoteId = null,
-                                rememberedRemoteId = null,
-                                lifecycle = SyncRegistrationLifecycle.NEVER_LINKED,
-                                changedAt = null,
-                                version = null,
-                            ),
-                        keys = emptySet<WidgetKey>(),
-                    ),
-                unlinkReason = UnlinkReason.ReplacedByRelink,
-            )
-        val restore =
-            SyncDecision.Restore(
-                local = localRecord(Widget.remotelyDeleted("local-1", remoteId, "SKU-1", "Old")),
-                remote = remote,
-                changes = changes,
-            )
-        val relink =
-            SyncDecision.Relink(
-                local = localRecord(Widget.linked("local-1", otherRemoteId, "SKU-1", "Old")),
-                remote = remote,
-                changes = changes,
-            )
-        val ignore =
-            SyncDecision.Ignore<WidgetId>(
-                subject = SyncSubject.Remote(remoteId),
-                reason = SyncReason.NotImportable,
-            )
-        val conflictDecision = SyncDecision.Conflict(conflict = conflict)
-        val retry =
-            SyncDecision.Retry(
-                subject = SyncSubject.Remote(remoteId),
-                delay = Duration.ofSeconds(3),
-                failure = failure,
-            )
-
-        assertThat(SyncAction.entries).containsExactly(
-            SyncAction.IMPORT,
-            SyncAction.UPDATE,
-            SyncAction.EQUAL,
-            SyncAction.DELETE,
-            SyncAction.UNLINK,
-            SyncAction.RESTORE,
-            SyncAction.RELINK,
-            SyncAction.IGNORE,
-            SyncAction.CONFLICT,
-            SyncAction.RETRY,
-        )
-        assertThat(
-            listOf(import, update, equal, delete, unlinkRemembered, restore, relink, ignore, conflictDecision, retry)
-                .map { it.action },
-        ).containsExactly(
-            SyncAction.IMPORT,
-            SyncAction.UPDATE,
-            SyncAction.EQUAL,
-            SyncAction.DELETE,
-            SyncAction.UNLINK,
-            SyncAction.RESTORE,
-            SyncAction.RELINK,
-            SyncAction.IGNORE,
-            SyncAction.CONFLICT,
-            SyncAction.RETRY,
-        )
-        assertThat(import.subject).isEqualTo(SyncSubject.Remote(remoteId))
-        assertThat(import.reason).isEqualTo(SyncReason.RemoteOnly)
-        assertThat(update.subject).isEqualTo(SyncSubject.Pair(local.localId, remoteId))
-        assertThat(update.reason).isEqualTo(SyncReason.RemoteChanged)
-        assertThat(update.effects).containsExactly(effect)
-        assertThat(equal.executable).isFalse()
-        assertThat(equal.reason).isEqualTo(SyncReason.AlreadyEqual)
-        assertThat(delete.subject).isEqualTo(SyncSubject.Pair(local.localId, remoteId))
-        assertThat(delete.reason).isEqualTo(SyncReason.RemoteDeleted)
-        assertThat(unlinkRemembered.subject).isEqualTo(SyncSubject.Pair(local.localId, remoteId))
-        assertThat(unlinkLocalOnly.subject).isEqualTo(SyncSubject.Local(LocalId("local-new")))
-        assertThat(unlinkUnknown.subject).isEqualTo(SyncSubject.Unknown)
-        assertThat(unlinkRemembered.reason).isEqualTo(SyncReason.LocalOnlyUnlinked)
-        assertThat(restore.reason).isEqualTo(SyncReason.RestoreLinkedRecord)
-        assertThat(relink.reason).isEqualTo(SyncReason.RelinkByNaturalKey)
-        assertThat(ignore.action).isEqualTo(SyncAction.IGNORE)
-        assertThat(ignore.executable).isFalse()
-        assertThat(conflictDecision.subject).isEqualTo(conflict.subject)
-        assertThat(conflictDecision.reason).isEqualTo(SyncReason.Conflict(conflict))
-        assertThat(retry.reason).isEqualTo(SyncReason.RetryLater(failure))
-        assertThat(retry.executable).isFalse()
-
-        assertThat(SyncReason.Policy("manual policy").message).isEqualTo("manual policy")
-        assertThat(SyncReason.Conflict(conflict).conflict).isSameAs(conflict)
-        assertThat(SyncReason.RetryLater(failure).failure).isSameAs(failure)
-        assertThat(SyncReason.RemoteDeleted.toString()).isEqualTo("RemoteDeleted")
+        assertActionOrder(variants)
+        assertDecisionDefaults(variants)
+        assertReasonContracts(variants.inputs)
     }
 
     @Test
@@ -205,21 +76,28 @@ class DecisionPlanReportTest {
                 remote = remote,
                 message = "more than one candidate",
             )
-        val conflictDecision = SyncDecision.Conflict(conflict)
+        val conflictDecision = SyncDecision.Conflict<Widget, RemoteWidget, WidgetId, WidgetKey>(conflict)
         val quietPlan =
-            SyncPlan<Widget, RemoteWidget, WidgetId>(
+            SyncPlan<Widget, RemoteWidget, WidgetId, WidgetKey>(
                 context = context,
                 decisions =
                     listOf(
                         SyncDecision.Equal(local = local, remote = remote),
-                        SyncDecision.Ignore(subject = SyncSubject.Remote(remoteId), reason = SyncReason.NotImportable),
+                        SyncDecision.Ignore<Widget, RemoteWidget, WidgetId, WidgetKey>(
+                            subject = SyncSubject.Remote(remoteId),
+                            reason = SyncReason.NotImportable,
+                        ),
                     ),
             )
         val conflictedPlan =
             quietPlan.copy(
                 decisions =
                     listOf(
-                        SyncDecision.Update(local = local, remote = remote, changes = ChangeSet()),
+                        SyncDecision.Update<Widget, RemoteWidget, WidgetId, WidgetKey>(
+                            local = local,
+                            remote = remote,
+                            changes = ChangeSet(),
+                        ),
                         conflictDecision,
                     ),
             )
@@ -232,7 +110,11 @@ class DecisionPlanReportTest {
         assertThat(conflictedPlan.substantive).isTrue()
         assertThat(conflictedPlan.component1()).isEqualTo(context)
         assertThat(conflictedPlan.component2()).containsExactly(
-            SyncDecision.Update(local = local, remote = remote, changes = ChangeSet()),
+            SyncDecision.Update<Widget, RemoteWidget, WidgetId, WidgetKey>(
+                local = local,
+                remote = remote,
+                changes = ChangeSet(),
+            ),
             conflictDecision,
         )
         assertThat(conflictedPlan.toString()).contains("decisions")
@@ -240,40 +122,183 @@ class DecisionPlanReportTest {
     }
 
     @Test
-    // Structural threshold: status/report generated-member coverage is intentionally table-like.
-    @Suppress("LongMethod")
     fun `sync outcomes reports and requeue decisions cover statuses actions defaults and generated members`() {
+        val fixture = outcomeReportFixture()
+
+        assertReportStatuses()
+        assertRequeueDecision(fixture.later)
+        assertOutcomeGeneratedMembers(fixture)
+        assertReportGeneratedMembers(fixture)
+    }
+
+    @Test
+    fun `match plan candidates conflicts and enums expose all fields and generated members`() {
+        val fixture = matchConflictFixture()
+
+        assertMatchEnums()
+        assertMatchPasses(fixture)
+        assertMatchGeneratedMembers(fixture)
+        assertConflictGeneratedMembers(fixture)
+    }
+
+    private fun decisionInputs(): DecisionInputs {
+        val local = localRecord()
+        val remote = remoteRecord()
+        val failure =
+            SyncFailure(
+                kind = SyncFailureKind.REMOTE_TIMEOUT,
+                message = "remote timed out",
+                retryable = true,
+                retryAfter = Duration.ofSeconds(3),
+                causeClass = "TimeoutException",
+            )
+        val conflict =
+            SyncConflict(
+                subject = SyncSubject.Pair(local.localId, remoteId),
+                kind = SyncConflictKind.LINK_MISMATCH,
+                local = local,
+                remote = remote,
+                message = "linked to a different remote",
+            )
+        return DecisionInputs(
+            local = local,
+            remote = remote,
+            changes = WidgetDiffer.diff(local.aggregate, remote.record),
+            effect =
+                SyncEffect.EnqueueEntitySync(
+                    key = "enqueue-w-2",
+                    syncName = SyncName("widget"),
+                    externalId = otherRemoteId,
+                ),
+            failure = failure,
+            conflict = conflict,
+        )
+    }
+
+    private fun decisionVariants(inputs: DecisionInputs = decisionInputs()): DecisionVariants {
+        val unlinkUnknownLocal: LocalRecord<Widget, WidgetId, WidgetKey> =
+            LocalRecord(
+                aggregate = Widget.neverLinked("local-unknown", "SKU-UNKNOWN", "Detached").copy(localId = null),
+                localId = null,
+                registration = SyncRegistration.inferred<WidgetId>(remoteId = null),
+                keys = emptySet(),
+            )
+        val deleteSignal = RemoteDeleteSignal.MissingFromAuthoritativeList(remoteId, changedAt)
+        return DecisionVariants(
+            inputs = inputs,
+            importDecision = SyncDecision.Import(remote = inputs.remote),
+            update =
+                SyncDecision.Update(
+                    local = inputs.local,
+                    remote = inputs.remote,
+                    changes = inputs.changes,
+                    effects = listOf(inputs.effect),
+                ),
+            equal = SyncDecision.Equal(local = inputs.local, remote = inputs.remote),
+            delete = SyncDecision.Delete(local = inputs.local, signal = deleteSignal),
+            unlinkRemembered = SyncDecision.Unlink(inputs.local, UnlinkReason.Policy("remote missing")),
+            unlinkLocalOnly =
+                SyncDecision.Unlink(
+                    localRecord(Widget.neverLinked("local-2", "SKU-2", "Detached")),
+                    UnlinkReason.ManualDetach,
+                ),
+            unlinkUnknown =
+                SyncDecision.Unlink<Widget, RemoteWidget, WidgetId, WidgetKey>(
+                    unlinkUnknownLocal,
+                    UnlinkReason.Policy("unknown local"),
+                ),
+            restore = SyncDecision.Restore(inputs.local, inputs.remote, inputs.changes),
+            relink = SyncDecision.Relink(inputs.local, inputs.remote, inputs.changes),
+            ignore = SyncDecision.Ignore(SyncSubject.Remote(remoteId), SyncReason.NotImportable),
+            conflictDecision = SyncDecision.Conflict(inputs.conflict),
+            retry = SyncDecision.Retry(SyncSubject.Remote(remoteId), Duration.ofSeconds(3), inputs.failure),
+        )
+    }
+
+    private fun assertActionOrder(variants: DecisionVariants) {
+        assertThat(SyncAction.entries).containsExactly(
+            SyncAction.IMPORT,
+            SyncAction.UPDATE,
+            SyncAction.EQUAL,
+            SyncAction.DELETE,
+            SyncAction.UNLINK,
+            SyncAction.RESTORE,
+            SyncAction.RELINK,
+            SyncAction.IGNORE,
+            SyncAction.CONFLICT,
+            SyncAction.RETRY,
+        )
+        assertThat(variants.ordered.map { it.action }).containsExactly(
+            SyncAction.IMPORT,
+            SyncAction.UPDATE,
+            SyncAction.EQUAL,
+            SyncAction.DELETE,
+            SyncAction.UNLINK,
+            SyncAction.UNLINK,
+            SyncAction.UNLINK,
+            SyncAction.RESTORE,
+            SyncAction.RELINK,
+            SyncAction.IGNORE,
+            SyncAction.CONFLICT,
+            SyncAction.RETRY,
+        )
+    }
+
+    private fun assertDecisionDefaults(variants: DecisionVariants) {
+        assertThat(variants.importDecision.subject).isEqualTo(SyncSubject.Remote(remoteId))
+        assertThat(variants.importDecision.reason).isEqualTo(SyncReason.RemoteOnly)
+        assertThat(variants.importDecision.executable).isTrue()
+        assertThat(variants.importDecision.remoteRecord).isSameAs(variants.inputs.remote)
+        assertThat(variants.importDecision.localRecord).isNull()
+        assertThat(variants.importDecision.changes).isNull()
+        assertThat(variants.importDecision.deleteSignal).isNull()
+        assertThat(variants.importDecision.unlinkReason).isNull()
+        assertThat(variants.importDecision.failure).isNull()
+        assertThat(variants.update.subject).isEqualTo(SyncSubject.Pair(variants.inputs.local.localId, remoteId))
+        assertThat(variants.update.reason).isEqualTo(SyncReason.RemoteChanged)
+        assertThat(variants.update.effects).containsExactly(variants.inputs.effect)
+        assertThat(variants.update.localRecord).isSameAs(variants.inputs.local)
+        assertThat(variants.update.remoteRecord).isSameAs(variants.inputs.remote)
+        assertThat(variants.update.changes).isSameAs(variants.inputs.changes)
+        assertThat(variants.equal.reason).isEqualTo(SyncReason.AlreadyEqual)
+        assertThat(variants.equal.executable).isFalse()
+        assertThat(variants.equal.localRecord).isSameAs(variants.inputs.local)
+        assertThat(variants.delete.reason).isEqualTo(SyncReason.RemoteDeleted)
+        assertThat(
+            variants.delete.deleteSignal,
+        ).isEqualTo(RemoteDeleteSignal.MissingFromAuthoritativeList(remoteId, changedAt))
+        assertThat(variants.delete.remoteRecord).isNull()
+        assertThat(
+            variants.unlinkRemembered.subject,
+        ).isEqualTo(SyncSubject.Pair(variants.inputs.local.localId, remoteId))
+        assertThat(variants.unlinkLocalOnly.subject).isEqualTo(SyncSubject.Local(LocalId("local-2")))
+        assertThat(variants.unlinkUnknown.subject).isEqualTo(SyncSubject.Unknown)
+        assertThat(variants.unlinkRemembered.unlinkReason).isEqualTo(UnlinkReason.Policy("remote missing"))
+        assertThat(variants.restore.reason).isEqualTo(SyncReason.RestoreLinkedRecord)
+        assertThat(variants.relink.reason).isEqualTo(SyncReason.RelinkByNaturalKey)
+        assertThat(variants.ignore.executable).isFalse()
+        assertThat(variants.conflictDecision.reason).isEqualTo(SyncReason.Conflict(variants.inputs.conflict))
+        assertThat(variants.retry.reason).isEqualTo(SyncReason.RetryLater(variants.inputs.failure))
+        assertThat(variants.retry.failure).isSameAs(variants.inputs.failure)
+        assertThat(variants.retry.executable).isFalse()
+    }
+
+    private fun assertReasonContracts(inputs: DecisionInputs) {
+        assertThat(SyncReason.Policy("custom").component1()).isEqualTo("custom")
+        assertThat(SyncReason.Policy("custom").copy()).isEqualTo(SyncReason.Policy("custom"))
+        assertThat(SyncReason.Conflict(inputs.conflict).component1()).isEqualTo(inputs.conflict)
+        assertThat(SyncReason.Conflict(inputs.conflict).copy()).isEqualTo(SyncReason.Conflict(inputs.conflict))
+        assertThat(SyncReason.RetryLater(inputs.failure).component1()).isEqualTo(inputs.failure)
+        assertThat(SyncReason.RetryLater(inputs.failure).copy()).isEqualTo(SyncReason.RetryLater(inputs.failure))
+        assertThat(SyncReason.RemoteOnly.toString()).isEqualTo("RemoteOnly")
+    }
+
+    private fun outcomeReportFixture(): OutcomeReportFixture {
         val context = SyncFixtures.context(scope = WidgetScope("default"))
         val startedAt = context.startedAt
         val completedAt = startedAt.plusSeconds(5)
         val subject = SyncSubject.Remote(remoteId)
-        val failure =
-            SyncFailure(
-                kind = SyncFailureKind.REMOTE_RATE_LIMITED,
-                message = "rate limited",
-                retryable = true,
-                retryAfter = Duration.ofMinutes(1),
-            )
-        val succeeded =
-            SyncOutcome.Succeeded(
-                subject = subject,
-                action = SyncAction.IMPORT,
-                duration = Duration.ofMillis(10),
-            )
-        val skipped =
-            SyncOutcome.Skipped(
-                subject = subject,
-                action = null,
-                duration = Duration.ZERO,
-                reason = SyncReason.Policy("dry run"),
-            )
-        val failed =
-            SyncOutcome.Failed(
-                subject = subject,
-                action = SyncAction.RETRY,
-                duration = Duration.ofMillis(20),
-                failure = failure,
-            )
+        val outcomes = outcomeFixture(subject)
         val later = RequeueDecision.Later(delay = Duration.ofMinutes(1), reason = "retry page")
         val defaultReport =
             SyncReport(
@@ -281,15 +306,64 @@ class DecisionPlanReportTest {
                 status = SyncReportStatus.SUCCEEDED,
                 startedAt = startedAt,
                 completedAt = completedAt,
-                outcomes = listOf(succeeded),
+                outcomes = listOf(outcomes.succeeded),
             )
         val partialReport =
             defaultReport.copy(
                 status = SyncReportStatus.PARTIAL,
-                outcomes = listOf(succeeded, skipped, failed),
+                outcomes = listOf(outcomes.succeeded, outcomes.skipped, outcomes.failed),
                 requeue = later,
             )
 
+        return OutcomeReportFixture(
+            context = context,
+            startedAt = startedAt,
+            completedAt = completedAt,
+            subject = subject,
+            failure = outcomes.failure,
+            succeeded = outcomes.succeeded,
+            skipped = outcomes.skipped,
+            failed = outcomes.failed,
+            later = later,
+            defaultReport = defaultReport,
+            partialReport = partialReport,
+        )
+    }
+
+    private fun outcomeFixture(subject: SyncSubject<WidgetId>): OutcomeFixture {
+        val failure =
+            SyncFailure(
+                kind = SyncFailureKind.REMOTE_RATE_LIMITED,
+                message = "rate limited",
+                retryable = true,
+                retryAfter = Duration.ofMinutes(1),
+            )
+        return OutcomeFixture(
+            failure = failure,
+            succeeded =
+                SyncOutcome.Succeeded(
+                    subject = subject,
+                    action = SyncAction.IMPORT,
+                    duration = Duration.ofMillis(10),
+                ),
+            skipped =
+                SyncOutcome.Skipped(
+                    subject = subject,
+                    action = null,
+                    duration = Duration.ZERO,
+                    reason = SyncReason.Policy("dry run"),
+                ),
+            failed =
+                SyncOutcome.Failed(
+                    subject = subject,
+                    action = SyncAction.RETRY,
+                    duration = Duration.ofMillis(20),
+                    failure = failure,
+                ),
+        )
+    }
+
+    private fun assertReportStatuses() {
         assertThat(SyncReportStatus.entries).containsExactly(
             SyncReportStatus.SUCCEEDED,
             SyncReportStatus.PARTIAL,
@@ -297,34 +371,41 @@ class DecisionPlanReportTest {
             SyncReportStatus.CONFLICTED,
             SyncReportStatus.SKIPPED,
         )
-        assertThat(defaultReport.requeue).isEqualTo(RequeueDecision.Done)
+    }
+
+    private fun assertRequeueDecision(later: RequeueDecision.Later) {
         assertThat(RequeueDecision.Done.toString()).isEqualTo("Done")
         assertThat(later.component1()).isEqualTo(Duration.ofMinutes(1))
         assertThat(later.component2()).isEqualTo("retry page")
         assertThat(later.copy(reason = "retry entity")).isEqualTo(
             RequeueDecision.Later(Duration.ofMinutes(1), "retry entity"),
         )
-        assertThat(listOf(succeeded, skipped, failed).map { it.action })
-            .containsExactly(SyncAction.IMPORT, null, SyncAction.RETRY)
-        assertThat(succeeded.component1()).isEqualTo(subject)
-        assertThat(succeeded.component2()).isEqualTo(SyncAction.IMPORT)
-        assertThat(succeeded.component3()).isEqualTo(Duration.ofMillis(10))
-        assertThat(skipped.component4()).isEqualTo(SyncReason.Policy("dry run"))
-        assertThat(failed.component4()).isEqualTo(failure)
-        assertThat(partialReport.component1()).isEqualTo(context)
-        assertThat(partialReport.component2()).isEqualTo(SyncReportStatus.PARTIAL)
-        assertThat(partialReport.component3()).isEqualTo(startedAt)
-        assertThat(partialReport.component4()).isEqualTo(completedAt)
-        assertThat(partialReport.component5()).containsExactly(succeeded, skipped, failed)
-        assertThat(partialReport.component6()).isEqualTo(later)
-        assertThat(partialReport.toString()).contains("PARTIAL")
-        assertThat(partialReport.hashCode()).isEqualTo(partialReport.copy().hashCode())
     }
 
-    @Test
-    // Structural threshold: match/conflict enum coverage is one generated-contract matrix.
-    @Suppress("LongMethod")
-    fun `match plan candidates conflicts and enums expose all fields and generated members`() {
+    private fun assertOutcomeGeneratedMembers(fixture: OutcomeReportFixture) {
+        assertThat(listOf(fixture.succeeded, fixture.skipped, fixture.failed).map { it.action })
+            .containsExactly(SyncAction.IMPORT, null, SyncAction.RETRY)
+        assertThat(fixture.succeeded.component1()).isEqualTo(fixture.subject)
+        assertThat(fixture.succeeded.component2()).isEqualTo(SyncAction.IMPORT)
+        assertThat(fixture.succeeded.component3()).isEqualTo(Duration.ofMillis(10))
+        assertThat(fixture.skipped.component4()).isEqualTo(SyncReason.Policy("dry run"))
+        assertThat(fixture.failed.component4()).isEqualTo(fixture.failure)
+    }
+
+    private fun assertReportGeneratedMembers(fixture: OutcomeReportFixture) {
+        assertThat(fixture.defaultReport.requeue).isEqualTo(RequeueDecision.Done)
+        assertThat(fixture.partialReport.component1()).isEqualTo(fixture.context)
+        assertThat(fixture.partialReport.component2()).isEqualTo(SyncReportStatus.PARTIAL)
+        assertThat(fixture.partialReport.component3()).isEqualTo(fixture.startedAt)
+        assertThat(fixture.partialReport.component4()).isEqualTo(fixture.completedAt)
+        assertThat(fixture.partialReport.component5())
+            .containsExactly(fixture.succeeded, fixture.skipped, fixture.failed)
+        assertThat(fixture.partialReport.component6()).isEqualTo(fixture.later)
+        assertThat(fixture.partialReport.toString()).contains("PARTIAL")
+        assertThat(fixture.partialReport.hashCode()).isEqualTo(fixture.partialReport.copy().hashCode())
+    }
+
+    private fun matchConflictFixture(): MatchConflictFixture {
         val hardPass =
             MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>(
                 name = "remote-id",
@@ -358,6 +439,19 @@ class DecisionPlanReportTest {
                 message = "version differs",
             )
 
+        return MatchConflictFixture(
+            hardPass = hardPass,
+            naturalPass = naturalPass,
+            rememberedPass = rememberedPass,
+            plan = plan,
+            local = local,
+            remote = remote,
+            candidate = candidate,
+            conflict = conflict,
+        )
+    }
+
+    private fun assertMatchEnums() {
         assertThat(MatchConfidence.entries).containsExactly(
             MatchConfidence.HARD,
             MatchConfidence.REMEMBERED_REMOTE_ID,
@@ -371,29 +465,41 @@ class DecisionPlanReportTest {
             SyncConflictKind.VERSION_CONFLICT,
             SyncConflictKind.UNSUPPORTED_MERGE,
         )
-        assertThat(hardPass.confidence).isEqualTo(MatchConfidence.HARD)
-        assertThat(hardPass.localKeys(local)).containsExactly(WidgetKey.Remote(remoteId))
-        assertThat(hardPass.remoteKeys(remote)).containsExactly(WidgetKey.Remote(remoteId))
-        assertThat(naturalPass.localKeys(local)).containsExactly(WidgetKey.Sku("SKU-1"))
-        assertThat(naturalPass.remoteKeys(remote)).containsExactly(WidgetKey.Sku("SKU-1"))
-        assertThat(plan.component1()).containsExactly(hardPass, rememberedPass, naturalPass)
-        assertThat(plan.copy().hashCode()).isEqualTo(plan.hashCode())
-        assertThat(plan.toString()).contains("remote-id")
-        assertThat(naturalPass.component1()).isEqualTo("sku")
-        assertThat(naturalPass.component4()).isEqualTo(MatchConfidence.NATURAL_KEY)
-        assertThat(candidate.component1()).isSameAs(naturalPass)
-        assertThat(candidate.component2()).isEqualTo(local)
-        assertThat(candidate.component3()).isEqualTo(remote)
-        assertThat(candidate.component4()).isEqualTo(WidgetKey.Sku("SKU-1"))
-        assertThat(candidate.copy(key = WidgetKey.Sku("SKU-COPY")).key).isEqualTo(WidgetKey.Sku("SKU-COPY"))
-        assertThat(candidate.toString()).contains("SKU-1")
-        assertThat(conflict.component1()).isEqualTo(SyncSubject.Pair(local.localId, remoteId))
-        assertThat(conflict.component2()).isEqualTo(SyncConflictKind.VERSION_CONFLICT)
-        assertThat(conflict.component3()).isEqualTo(local)
-        assertThat(conflict.component4()).isEqualTo(remote)
-        assertThat(conflict.component5()).isEqualTo("version differs")
-        assertThat(conflict.copy(message = "unsupported merge").kind).isEqualTo(SyncConflictKind.VERSION_CONFLICT)
-        assertThat(conflict.toString()).contains("version differs")
+    }
+
+    private fun assertMatchPasses(fixture: MatchConflictFixture) {
+        assertThat(fixture.hardPass.confidence).isEqualTo(MatchConfidence.HARD)
+        assertThat(fixture.hardPass.localKeys(fixture.local)).containsExactly(WidgetKey.Remote(remoteId))
+        assertThat(fixture.hardPass.remoteKeys(fixture.remote)).containsExactly(WidgetKey.Remote(remoteId))
+        assertThat(fixture.naturalPass.localKeys(fixture.local)).containsExactly(WidgetKey.Sku("SKU-1"))
+        assertThat(fixture.naturalPass.remoteKeys(fixture.remote)).containsExactly(WidgetKey.Sku("SKU-1"))
+    }
+
+    private fun assertMatchGeneratedMembers(fixture: MatchConflictFixture) {
+        assertThat(fixture.plan.component1())
+            .containsExactly(fixture.hardPass, fixture.rememberedPass, fixture.naturalPass)
+        assertThat(fixture.plan.copy().hashCode()).isEqualTo(fixture.plan.hashCode())
+        assertThat(fixture.plan.toString()).contains("remote-id")
+        assertThat(fixture.naturalPass.component1()).isEqualTo("sku")
+        assertThat(fixture.naturalPass.component4()).isEqualTo(MatchConfidence.NATURAL_KEY)
+        assertThat(fixture.candidate.component1()).isSameAs(fixture.naturalPass)
+        assertThat(fixture.candidate.component2()).isEqualTo(fixture.local)
+        assertThat(fixture.candidate.component3()).isEqualTo(fixture.remote)
+        assertThat(fixture.candidate.component4()).isEqualTo(WidgetKey.Sku("SKU-1"))
+        assertThat(fixture.candidate.copy(key = WidgetKey.Sku("SKU-COPY")).key)
+            .isEqualTo(WidgetKey.Sku("SKU-COPY"))
+        assertThat(fixture.candidate.toString()).contains("SKU-1")
+    }
+
+    private fun assertConflictGeneratedMembers(fixture: MatchConflictFixture) {
+        assertThat(fixture.conflict.component1()).isEqualTo(SyncSubject.Pair(fixture.local.localId, remoteId))
+        assertThat(fixture.conflict.component2()).isEqualTo(SyncConflictKind.VERSION_CONFLICT)
+        assertThat(fixture.conflict.component3()).isEqualTo(fixture.local)
+        assertThat(fixture.conflict.component4()).isEqualTo(fixture.remote)
+        assertThat(fixture.conflict.component5()).isEqualTo("version differs")
+        assertThat(fixture.conflict.copy(message = "unsupported merge").kind)
+            .isEqualTo(SyncConflictKind.VERSION_CONFLICT)
+        assertThat(fixture.conflict.toString()).contains("version differs")
     }
 
     private fun localRecord(
@@ -403,4 +509,77 @@ class DecisionPlanReportTest {
     private fun remoteRecord(
         remote: RemoteWidget = RemoteWidget(id = remoteId, sku = "SKU-1", name = "New"),
     ): RemoteRecord<RemoteWidget, WidgetId, WidgetKey> = WidgetRemoteProjector.project(remote)
+
+    private data class DecisionInputs(
+        val local: LocalRecord<Widget, WidgetId, WidgetKey>,
+        val remote: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>,
+        val changes: ChangeSet,
+        val effect: SyncEffect.EnqueueEntitySync<WidgetId>,
+        val failure: SyncFailure,
+        val conflict: SyncConflict<Widget, RemoteWidget, WidgetId, WidgetKey>,
+    )
+
+    private data class DecisionVariants(
+        val inputs: DecisionInputs,
+        val importDecision: SyncDecision.Import<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val update: SyncDecision.Update<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val equal: SyncDecision.Equal<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val delete: SyncDecision.Delete<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val unlinkRemembered: SyncDecision.Unlink<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val unlinkLocalOnly: SyncDecision.Unlink<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val unlinkUnknown: SyncDecision.Unlink<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val restore: SyncDecision.Restore<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val relink: SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val ignore: SyncDecision.Ignore<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val conflictDecision: SyncDecision.Conflict<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val retry: SyncDecision.Retry<Widget, RemoteWidget, WidgetId, WidgetKey>,
+    ) {
+        val ordered: List<WidgetDecision> =
+            listOf(
+                importDecision,
+                update,
+                equal,
+                delete,
+                unlinkRemembered,
+                unlinkLocalOnly,
+                unlinkUnknown,
+                restore,
+                relink,
+                ignore,
+                conflictDecision,
+                retry,
+            )
+    }
+
+    private data class OutcomeReportFixture(
+        val context: SyncContext<WidgetScope>,
+        val startedAt: Instant,
+        val completedAt: Instant,
+        val subject: SyncSubject<WidgetId>,
+        val failure: SyncFailure,
+        val succeeded: SyncOutcome.Succeeded<WidgetId>,
+        val skipped: SyncOutcome.Skipped<WidgetId>,
+        val failed: SyncOutcome.Failed<WidgetId>,
+        val later: RequeueDecision.Later,
+        val defaultReport: SyncReport,
+        val partialReport: SyncReport,
+    )
+
+    private data class OutcomeFixture(
+        val failure: SyncFailure,
+        val succeeded: SyncOutcome.Succeeded<WidgetId>,
+        val skipped: SyncOutcome.Skipped<WidgetId>,
+        val failed: SyncOutcome.Failed<WidgetId>,
+    )
+
+    private data class MatchConflictFixture(
+        val hardPass: MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val naturalPass: MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val rememberedPass: MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val plan: MatchPlan<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val local: LocalRecord<Widget, WidgetId, WidgetKey>,
+        val remote: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>,
+        val candidate: MatchCandidate<Widget, RemoteWidget, WidgetId, WidgetKey>,
+        val conflict: SyncConflict<Widget, RemoteWidget, WidgetId, WidgetKey>,
+    )
 }

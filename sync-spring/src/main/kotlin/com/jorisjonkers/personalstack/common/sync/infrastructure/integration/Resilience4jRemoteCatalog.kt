@@ -64,16 +64,14 @@ class Resilience4jRemoteCatalog<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
      * Delegate transports are intentionally opaque, so every non-retry carrier exception
      * is converted into the RemoteFetch failure algebra at this adapter boundary.
      */
-    @Suppress("TooGenericExceptionCaught")
     private fun <T : Any> guarded(call: () -> RemoteFetch<T>): RemoteFetch<T> =
-        try {
+        runCatching {
             decorate(call).invoke()
-        } catch (ex: RetryableRemoteException) {
-            // Delegate already produced a typed RemoteFetch.Failed; surface it as-is.
-            @Suppress("UNCHECKED_CAST")
-            ex.fetch as RemoteFetch<T>
-        } catch (ex: Exception) {
-            RemoteFetch.Failed(toFailure(ex))
+        }.getOrElse { ex ->
+            when (ex) {
+                is RetryableRemoteException -> ex.fetch
+                else -> RemoteFetch.Failed(toFailure(ex))
+            }
         }
 
     private fun <T : Any> decorate(call: () -> RemoteFetch<T>): () -> RemoteFetch<T> {

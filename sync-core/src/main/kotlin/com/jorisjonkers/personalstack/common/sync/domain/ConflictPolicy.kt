@@ -7,7 +7,7 @@ package com.jorisjonkers.personalstack.common.sync.domain
  * lenient policy, but the return type is always a `Conflict` decision.
  */
 fun interface ConflictPolicy<A : Any, R : Any, RID : Any, KEY : Any> {
-    fun decide(conflict: SyncConflict<A, R, RID, KEY>): SyncDecision.Conflict<RID>
+    fun decide(conflict: SyncConflict<A, R, RID, KEY>): SyncDecision.Conflict<A, R, RID, KEY>
 
     companion object {
         /** The mandatory safe default: turn any conflict into a non-executable conflict decision. */

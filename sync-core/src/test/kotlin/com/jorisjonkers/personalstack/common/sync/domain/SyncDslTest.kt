@@ -26,86 +26,98 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
 
+private typealias DslMissingRemotePolicy = MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey>
+
 class SyncDslTest {
-    @Test
     // Structural threshold: this DSL smoke test intentionally exercises every setter in one definition.
-    @Suppress("LongMethod")
+    @Test
     fun `syncResource wires every setter and sub-builder override`() {
-        val repository = widgetRepository()
-        val remoteCatalog = InMemoryRemoteCatalog<RemoteWidget, WidgetId, WidgetKey, WidgetScope>()
-        val lockManager = InMemoryLockManager()
-        val unitOfWork = InMemoryUnitOfWork()
-        val effectOutbox = InMemoryEffectOutbox()
-        val auditTrail = InMemoryAuditTrail()
-        val observer = InMemoryObserver()
-        val idempotencyStore = InMemoryIdempotencyStore()
-        val checkpointStore = InMemoryCheckpointStore()
-        val missingRemotePolicy =
-            MissingRemotePolicy<Widget, WidgetId, WidgetKey> { local, _ ->
-                SyncDecision.Unlink(local, UnlinkReason.Policy("custom missing"))
+        val fixture = dslWiringFixture()
+        val definition = buildDslDefinition(fixture)
+
+        assertDslWiring(definition, fixture)
+        assertDslStrategies(definition)
+    }
+
+    private fun dslWiringFixture(): DslWiringFixture =
+        DslWiringFixture(
+            repository = widgetRepository(),
+            remoteCatalog = InMemoryRemoteCatalog(),
+            lockManager = InMemoryLockManager(),
+            unitOfWork = InMemoryUnitOfWork(),
+            effectOutbox = InMemoryEffectOutbox(),
+            auditTrail = InMemoryAuditTrail(),
+            observer = InMemoryObserver(),
+            idempotencyStore = InMemoryIdempotencyStore(),
+            checkpointStore = InMemoryCheckpointStore(),
+            missingRemotePolicy =
+                MissingRemotePolicy { local, _ ->
+                    SyncDecision.Unlink(local, UnlinkReason.Policy("custom missing"))
+                },
+            importPolicy = ImportPolicy { remote -> remote.importable && remote.sku.startsWith("SKU") },
+            conflictPolicy = ConflictPolicy { conflict -> SyncDecision.Conflict(conflict) },
+        )
+
+    private fun buildDslDefinition(
+        fixture: DslWiringFixture,
+    ): SyncDefinition<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope> =
+        syncResource<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope>("widget-dsl") {
+            localRepository(fixture.repository)
+            remoteCatalog(fixture.remoteCatalog)
+            lockManager(fixture.lockManager)
+            unitOfWork(fixture.unitOfWork)
+            effectOutbox(fixture.effectOutbox)
+            auditTrail(fixture.auditTrail)
+            observer(fixture.observer)
+            idempotencyStore(fixture.idempotencyStore)
+            checkpointStore(fixture.checkpointStore)
+            localProjector { WidgetLocalProjector.project(it) }
+            remoteProjector { WidgetRemoteProjector.project(it) }
+            differ(WidgetDiffer::diff)
+            mapper(WidgetMapper)
+            matching {
+                pass(
+                    name = "remote-id",
+                    localKeys = { record -> record.keys.filterIsInstance<WidgetKey.Remote>().toSet() },
+                    remoteKeys = { record -> record.keys.filterIsInstance<WidgetKey.Remote>().toSet() },
+                )
+                pass(
+                    name = "sku",
+                    confidence = MatchConfidence.NATURAL_KEY,
+                    localKeys = { record -> record.keys.filterIsInstance<WidgetKey.Sku>().toSet() },
+                    remoteKeys = { record -> record.keys.filterIsInstance<WidgetKey.Sku>().toSet() },
+                )
             }
-        val importPolicy = ImportPolicy<RemoteWidget> { remote -> remote.importable && remote.sku.startsWith("SKU") }
-        val conflictPolicy =
-            ConflictPolicy<Widget, RemoteWidget, WidgetId, WidgetKey> { conflict ->
-                SyncDecision.Conflict(conflict)
+            policies {
+                missingRemotePolicy(fixture.missingRemotePolicy)
+                importPolicy(fixture.importPolicy)
+                conflictPolicy(fixture.conflictPolicy)
             }
-
-        val definition =
-            syncResource<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope>("widget-dsl") {
-                localRepository(repository)
-                remoteCatalog(remoteCatalog)
-                lockManager(lockManager)
-                unitOfWork(unitOfWork)
-                effectOutbox(effectOutbox)
-                auditTrail(auditTrail)
-                observer(observer)
-                idempotencyStore(idempotencyStore)
-                checkpointStore(checkpointStore)
-
-                localProjector { WidgetLocalProjector.project(it) }
-                remoteProjector { WidgetRemoteProjector.project(it) }
-                differ(WidgetDiffer::diff)
-                mapper(WidgetMapper)
-
-                matching {
-                    pass(
-                        name = "remote-id",
-                        localKeys = { record -> record.keys.filterIsInstance<WidgetKey.Remote>().toSet() },
-                        remoteKeys = { record -> record.keys.filterIsInstance<WidgetKey.Remote>().toSet() },
-                    )
-                    pass(
-                        name = "sku",
-                        confidence = MatchConfidence.NATURAL_KEY,
-                        localKeys = { record -> record.keys.filterIsInstance<WidgetKey.Sku>().toSet() },
-                        remoteKeys = { record -> record.keys.filterIsInstance<WidgetKey.Sku>().toSet() },
-                    )
-                }
-                policies {
-                    missingRemotePolicy(missingRemotePolicy)
-                    importPolicy(importPolicy)
-                    conflictPolicy(conflictPolicy)
-                }
-                execution {
-                    listTransactionMode = ListTransactionMode.WHOLE_SCOPE
-                    pageSize = 42
-                    lockTimeout = Duration.ofMillis(250)
-                    authorityMode = AuthorityMode.MULTI_WRITER
-                }
+            execution {
+                listTransactionMode = ListTransactionMode.WHOLE_SCOPE
+                pageSize = 42
+                lockTimeout = Duration.ofMillis(250)
+                authorityMode = AuthorityMode.MULTI_WRITER
             }
+        }
 
+    private fun assertDslWiring(
+        definition: SyncDefinition<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope>,
+        fixture: DslWiringFixture,
+    ) {
         assertThat(definition.name).isEqualTo(SyncName("widget-dsl"))
-        assertThat(definition.ports.localRepository).isSameAs(repository)
-        assertThat(definition.ports.remoteCatalog).isSameAs(remoteCatalog)
-        assertThat(definition.ports.lockManager).isSameAs(lockManager)
-        assertThat(definition.ports.unitOfWork).isSameAs(unitOfWork)
-        assertThat(definition.ports.effectOutbox).isSameAs(effectOutbox)
-        assertThat(definition.ports.auditTrail).isSameAs(auditTrail)
-        assertThat(definition.ports.observer).isSameAs(observer)
-        assertThat(definition.ports.idempotencyStore).isSameAs(idempotencyStore)
-        assertThat(definition.ports.checkpointStore).isSameAs(checkpointStore)
-        assertThat(definition.policies.missingRemotePolicy).isSameAs(missingRemotePolicy)
-        assertThat(definition.policies.importPolicy).isSameAs(importPolicy)
-        assertThat(definition.policies.conflictPolicy).isSameAs(conflictPolicy)
+        assertThat(definition.ports.localRepository).isSameAs(fixture.repository)
+        assertThat(definition.ports.remoteCatalog).isSameAs(fixture.remoteCatalog)
+        assertThat(definition.ports.lockManager).isSameAs(fixture.lockManager)
+        assertThat(definition.ports.unitOfWork).isSameAs(fixture.unitOfWork)
+        assertThat(definition.ports.effectOutbox).isSameAs(fixture.effectOutbox)
+        assertThat(definition.ports.auditTrail).isSameAs(fixture.auditTrail)
+        assertThat(definition.ports.observer).isSameAs(fixture.observer)
+        assertThat(definition.ports.idempotencyStore).isSameAs(fixture.idempotencyStore)
+        assertThat(definition.ports.checkpointStore).isSameAs(fixture.checkpointStore)
+        assertThat(definition.policies.missingRemotePolicy).isSameAs(fixture.missingRemotePolicy)
+        assertThat(definition.policies.importPolicy).isSameAs(fixture.importPolicy)
+        assertThat(definition.policies.conflictPolicy).isSameAs(fixture.conflictPolicy)
         assertThat(definition.execution)
             .isEqualTo(
                 SyncExecutionOptions(
@@ -115,7 +127,11 @@ class SyncDslTest {
                     authorityMode = AuthorityMode.MULTI_WRITER,
                 ),
             )
+    }
 
+    private fun assertDslStrategies(
+        definition: SyncDefinition<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope>,
+    ) {
         val local = Widget.linked("local-1", WidgetId("w-1"), "SKU-1", "Local")
         val remote = RemoteWidget(WidgetId("w-1"), "SKU-1", "Remote")
         val localRecord = definition.localProjector.project(local)
@@ -128,16 +144,29 @@ class SyncDslTest {
             .isEqualTo(WidgetScope("scope-1"))
         assertThat(definition.matchPlan.passes.map { it.name }).containsExactly("remote-id", "sku")
         assertThat(definition.matchPlan.passes[0].confidence).isEqualTo(MatchConfidence.HARD)
-        assertThat(
-            definition.matchPlan.passes[0].localKeys(localRecord),
-        ).containsExactly(WidgetKey.Remote(WidgetId("w-1")))
-        assertThat(
-            definition.matchPlan.passes[0].remoteKeys(remoteRecord),
-        ).containsExactly(WidgetKey.Remote(WidgetId("w-1")))
+        assertThat(definition.matchPlan.passes[0].localKeys(localRecord))
+            .containsExactly(WidgetKey.Remote(WidgetId("w-1")))
+        assertThat(definition.matchPlan.passes[0].remoteKeys(remoteRecord))
+            .containsExactly(WidgetKey.Remote(WidgetId("w-1")))
         assertThat(definition.matchPlan.passes[1].confidence).isEqualTo(MatchConfidence.NATURAL_KEY)
         assertThat(definition.matchPlan.passes[1].localKeys(localRecord)).containsExactly(WidgetKey.Sku("SKU-1"))
         assertThat(definition.matchPlan.passes[1].remoteKeys(remoteRecord)).containsExactly(WidgetKey.Sku("SKU-1"))
     }
+
+    private data class DslWiringFixture(
+        val repository: InMemoryLocalSyncRepository<Widget, WidgetId, WidgetScope>,
+        val remoteCatalog: InMemoryRemoteCatalog<RemoteWidget, WidgetId, WidgetKey, WidgetScope>,
+        val lockManager: InMemoryLockManager,
+        val unitOfWork: InMemoryUnitOfWork,
+        val effectOutbox: InMemoryEffectOutbox,
+        val auditTrail: InMemoryAuditTrail,
+        val observer: InMemoryObserver,
+        val idempotencyStore: InMemoryIdempotencyStore,
+        val checkpointStore: InMemoryCheckpointStore,
+        val missingRemotePolicy: DslMissingRemotePolicy,
+        val importPolicy: ImportPolicy<RemoteWidget>,
+        val conflictPolicy: ConflictPolicy<Widget, RemoteWidget, WidgetId, WidgetKey>,
+    )
 
     @Test
     fun `policies builder keeps safe defaults when only missing remote policy is supplied`() {
@@ -147,7 +176,7 @@ class SyncDslTest {
 
         assertThat(definition.policies.importPolicy.importable(remote)).isTrue()
         assertThat(definition.policies.conflictPolicy.decide(conflict))
-            .isEqualTo(SyncDecision.Conflict<WidgetId>(conflict))
+            .isEqualTo(SyncDecision.Conflict<Widget, RemoteWidget, WidgetId, WidgetKey>(conflict))
     }
 
     @Test
@@ -181,7 +210,7 @@ class SyncDslTest {
         val decision = definition.policies.missingRemotePolicy.decide(localRecord, observedAt)
 
         assertThat(decision).isInstanceOf(SyncDecision.Delete::class.java)
-        val delete = decision as SyncDecision.Delete<Widget, WidgetId, WidgetKey>
+        val delete = decision as SyncDecision.Delete<Widget, RemoteWidget, WidgetId, WidgetKey>
         assertThat(delete.local).isSameAs(localRecord)
         assertThat(delete.signal)
             .isEqualTo(RemoteDeleteSignal.MissingFromAuthoritativeList(WidgetId("w-1"), observedAt))
@@ -315,11 +344,10 @@ class SyncDslTest {
     }
 
     // Structural threshold: omission branches mirror the DSL's required fields one-for-one.
-    @Suppress("CyclomaticComplexMethod")
     private fun minimalDefinition(
         omit: String? = null,
         importPolicy: ImportPolicy<RemoteWidget>? = null,
-        missingRemotePolicy: MissingRemotePolicy<Widget, WidgetId, WidgetKey> = WidgetHarness.UNLINK_MISSING,
+        missingRemotePolicy: DslMissingRemotePolicy = WidgetHarness.UNLINK_MISSING,
     ): SyncDefinition<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope> {
         val repository = widgetRepository()
         val remoteCatalog = InMemoryRemoteCatalog<RemoteWidget, WidgetId, WidgetKey, WidgetScope>()
@@ -332,19 +360,19 @@ class SyncDslTest {
         val checkpointStore = InMemoryCheckpointStore()
 
         return syncResource("widget") {
-            if (omit != "localRepository") localRepository(repository)
-            if (omit != "remoteCatalog") remoteCatalog(remoteCatalog)
-            if (omit != "lockManager") lockManager(lockManager)
-            if (omit != "unitOfWork") unitOfWork(unitOfWork)
-            if (omit != "effectOutbox") effectOutbox(effectOutbox)
-            if (omit != "auditTrail") auditTrail(auditTrail)
-            if (omit != "observer") observer(observer)
-            if (omit != "idempotencyStore") idempotencyStore(idempotencyStore)
-            if (omit != "checkpointStore") checkpointStore(checkpointStore)
-            if (omit != "localProjector") localProjector { WidgetLocalProjector.project(it) }
-            if (omit != "remoteProjector") remoteProjector { WidgetRemoteProjector.project(it) }
-            if (omit != "differ") differ(WidgetDiffer::diff)
-            if (omit != "mapper") mapper(WidgetMapper)
+            configureUnless(omit, "localRepository") { localRepository(repository) }
+            configureUnless(omit, "remoteCatalog") { remoteCatalog(remoteCatalog) }
+            configureUnless(omit, "lockManager") { lockManager(lockManager) }
+            configureUnless(omit, "unitOfWork") { unitOfWork(unitOfWork) }
+            configureUnless(omit, "effectOutbox") { effectOutbox(effectOutbox) }
+            configureUnless(omit, "auditTrail") { auditTrail(auditTrail) }
+            configureUnless(omit, "observer") { observer(observer) }
+            configureUnless(omit, "idempotencyStore") { idempotencyStore(idempotencyStore) }
+            configureUnless(omit, "checkpointStore") { checkpointStore(checkpointStore) }
+            configureUnless(omit, "localProjector") { localProjector { WidgetLocalProjector.project(it) } }
+            configureUnless(omit, "remoteProjector") { remoteProjector { WidgetRemoteProjector.project(it) } }
+            configureUnless(omit, "differ") { differ(WidgetDiffer::diff) }
+            configureUnless(omit, "mapper") { mapper(WidgetMapper) }
             matching {
                 pass(
                     name = "remote-id",
@@ -356,6 +384,16 @@ class SyncDslTest {
                 if (omit != "missingRemotePolicy") missingRemotePolicy(missingRemotePolicy)
                 importPolicy?.let { importPolicy(it) }
             }
+        }
+    }
+
+    private fun SyncResourceBuilder<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope>.configureUnless(
+        omitted: String?,
+        name: String,
+        block: SyncResourceBuilder<Widget, RemoteWidget, WidgetId, WidgetKey, WidgetScope>.() -> Unit,
+    ) {
+        if (omitted != name) {
+            block()
         }
     }
 

@@ -54,30 +54,97 @@ fun <A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any> syncResource(
  * Intentionally exposes one setter per port/strategy so call sites stay explicit.
  */
 @SyncDslMarker
-@Suppress("TooManyFunctions")
 class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private val name: SyncName,
-) {
-    private var localRepository: LocalSyncRepository<A, RID, SCOPE>? = null
-    private var remoteCatalog: RemoteCatalog<R, RID, KEY, SCOPE>? = null
-    private var lockManager: LockManager? = null
-    private var unitOfWork: SyncUnitOfWork? = null
-    private var effectOutbox: SyncEffectOutbox? = null
-    private var auditTrail: AuditTrail? = null
-    private var observer: SyncObserver? = null
-    private var idempotencyStore: IdempotencyStore? = null
-    private var checkpointStore: SyncCheckpointStore? = null
-
+) : SyncResourcePortBuilder<A, R, RID, KEY, SCOPE>() {
     private var localProjector: LocalProjector<A, RID, KEY>? = null
     private var remoteProjector: RemoteProjector<R, RID, KEY>? = null
     private var differ: SyncDiffer<A, R>? = null
-    private var mapper: SyncMapper<A, R, SCOPE>? = null
+    private var mapper: SyncMapper<A, R, RID, SCOPE>? = null
 
     private val matching = MatchingBuilder<A, R, RID, KEY>()
     private val policies = PoliciesBuilder<A, R, RID, KEY>()
     private var execution = SyncExecutionOptions()
 
-    // --- outbound ports (mandatory ones are checked in build()) -----------------------------
+    // --- pure strategies --------------------------------------------------------------------
+
+    /** Set both projectors from one named [SyncProjection] object (equivalent to the two setters). */
+    fun projection(projection: SyncProjection<A, R, RID, KEY>) {
+        localProjector { projection.local(it) }
+        remoteProjector { projection.remote(it) }
+    }
+
+    fun localProjector(project: (A) -> LocalRecord<A, RID, KEY>) {
+        localProjector = LocalProjector { project(it) }
+    }
+
+    fun remoteProjector(project: (R) -> RemoteRecord<R, RID, KEY>) {
+        remoteProjector = RemoteProjector { project(it) }
+    }
+
+    fun differ(diff: (A, R) -> ChangeSet) {
+        differ = SyncDiffer { local, remote -> diff(local, remote) }
+    }
+
+    fun mapper(mapper: SyncMapper<A, R, RID, SCOPE>) {
+        this.mapper = mapper
+    }
+
+    fun matching(block: MatchingBuilder<A, R, RID, KEY>.() -> Unit) {
+        matching.apply(block)
+    }
+
+    fun policies(block: PoliciesBuilder<A, R, RID, KEY>.() -> Unit) {
+        policies.apply(block)
+    }
+
+    fun execution(block: ExecutionBuilder.() -> Unit) {
+        execution = ExecutionBuilder(execution).apply(block).build()
+    }
+
+    fun build(): SyncDefinition<A, R, RID, KEY, SCOPE> =
+        SyncDefinition(
+            name = name,
+            localProjector = requireConfigured(localProjector, "localProjector"),
+            remoteProjector = requireConfigured(remoteProjector, "remoteProjector"),
+            differ = requireConfigured(differ, "differ"),
+            mapper = requireConfigured(mapper, "mapper"),
+            matchPlan = matching.build(),
+            policies = policies.build(),
+            execution = execution,
+            ports =
+                SyncPorts(
+                    localRepository = requireConfigured(localRepository, "localRepository"),
+                    remoteCatalog = requireConfigured(remoteCatalog, "remoteCatalog"),
+                    lockManager = requireConfigured(lockManager, "lockManager"),
+                    unitOfWork = requireConfigured(unitOfWork, "unitOfWork"),
+                    effectOutbox = requireConfigured(effectOutbox, "effectOutbox"),
+                    auditTrail = requireConfigured(auditTrail, "auditTrail"),
+                    observer = requireConfigured(observer, "observer"),
+                    idempotencyStore = requireConfigured(idempotencyStore, "idempotencyStore"),
+                    checkpointStore = requireConfigured(checkpointStore, "checkpointStore"),
+                ),
+        )
+
+    private fun <T> requireConfigured(
+        value: T?,
+        what: String,
+    ): T = value ?: throw IllegalStateException("syncResource(\"${name.value}\"): $what must be configured")
+}
+
+/** Outbound port wiring for [SyncResourceBuilder]. */
+@SyncDslMarker
+open class SyncResourcePortBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any> {
+    protected var localRepository: LocalSyncRepository<A, RID, SCOPE>? = null
+    protected var remoteCatalog: RemoteCatalog<R, RID, KEY, SCOPE>? = null
+    protected var lockManager: LockManager? = null
+    protected var unitOfWork: SyncUnitOfWork? = null
+    protected var effectOutbox: SyncEffectOutbox? = null
+    protected var auditTrail: AuditTrail? = null
+    protected var observer: SyncObserver? = null
+    protected var idempotencyStore: IdempotencyStore? = null
+    protected var checkpointStore: SyncCheckpointStore? = null
+
     fun localRepository(port: LocalSyncRepository<A, RID, SCOPE>) {
         localRepository = port
     }
@@ -129,77 +196,6 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         idempotencyStore(ports.idempotencyStore)
         checkpointStore(ports.checkpointStore)
     }
-
-    // --- pure strategies --------------------------------------------------------------------
-
-    /** Set both projectors from one named [SyncProjection] object (equivalent to the two setters). */
-    fun projection(projection: SyncProjection<A, R, RID, KEY>) {
-        localProjector { projection.local(it) }
-        remoteProjector { projection.remote(it) }
-    }
-
-    fun localProjector(project: (A) -> LocalRecord<A, RID, KEY>) {
-        localProjector = LocalProjector { project(it) }
-    }
-
-    fun remoteProjector(project: (R) -> RemoteRecord<R, RID, KEY>) {
-        remoteProjector = RemoteProjector { project(it) }
-    }
-
-    fun differ(diff: (A, R) -> ChangeSet) {
-        differ = SyncDiffer { local, remote -> diff(local, remote) }
-    }
-
-    fun mapper(mapper: SyncMapper<A, R, SCOPE>) {
-        this.mapper = mapper
-    }
-
-    fun matching(block: MatchingBuilder<A, R, RID, KEY>.() -> Unit) {
-        matching.apply(block)
-    }
-
-    fun policies(block: PoliciesBuilder<A, R, RID, KEY>.() -> Unit) {
-        policies.apply(block)
-    }
-
-    fun execution(block: ExecutionBuilder.() -> Unit) {
-        execution = ExecutionBuilder(execution).apply(block).build()
-    }
-
-    fun build(): SyncDefinition<A, R, RID, KEY, SCOPE> =
-        SyncDefinition(
-            name = name,
-            localProjector = requireConfigured(localProjector, "localProjector"),
-            remoteProjector = requireConfigured(remoteProjector, "remoteProjector"),
-            differ = requireConfigured(differ, "differ"),
-            mapper = requireConfigured(mapper, "mapper"),
-            matchPlan = matching.build(),
-            policies = policies.build(),
-            execution = execution,
-            ports =
-                SyncPorts(
-                    localRepository = requireConfigured(localRepository, "localRepository"),
-                    remoteCatalog = requireConfigured(remoteCatalog, "remoteCatalog"),
-                    lockManager = requireConfigured(lockManager, "lockManager"),
-                    unitOfWork = requireConfigured(unitOfWork, "unitOfWork"),
-                    effectOutbox = requireConfigured(effectOutbox, "effectOutbox"),
-                    auditTrail = requireConfigured(auditTrail, "auditTrail"),
-                    observer = requireConfigured(observer, "observer"),
-                    idempotencyStore = requireConfigured(idempotencyStore, "idempotencyStore"),
-                    checkpointStore = requireConfigured(checkpointStore, "checkpointStore"),
-                ),
-        )
-
-    private fun <T> requireConfigured(
-        value: T?,
-        what: String,
-    ): T = requireNonNull(value) { "syncResource(\"${name.value}\"): $what must be configured" }
-
-    // Local helper to keep the message lazy without pulling in extra imports.
-    private inline fun <T> requireNonNull(
-        value: T?,
-        message: () -> String,
-    ): T = value ?: throw IllegalStateException(message())
 }
 
 /** Collects the ordered list of [MatchPass]es for a resource. */
@@ -271,7 +267,7 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
 class PoliciesBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
     private var conflictPolicy: ConflictPolicy<A, R, RID, KEY> = ConflictPolicy.failClosed()
     private var importPolicy: ImportPolicy<R> = ImportPolicy { true }
-    private var missingRemotePolicy: MissingRemotePolicy<A, RID, KEY>? = null
+    private var missingRemotePolicy: MissingRemotePolicy<A, R, RID, KEY>? = null
 
     fun conflictPolicy(policy: ConflictPolicy<A, R, RID, KEY>) {
         conflictPolicy = policy
@@ -281,7 +277,7 @@ class PoliciesBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
         importPolicy = policy
     }
 
-    fun missingRemotePolicy(policy: MissingRemotePolicy<A, RID, KEY>) {
+    fun missingRemotePolicy(policy: MissingRemotePolicy<A, R, RID, KEY>) {
         missingRemotePolicy = policy
     }
 

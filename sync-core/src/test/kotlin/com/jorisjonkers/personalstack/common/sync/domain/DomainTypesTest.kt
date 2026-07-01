@@ -188,10 +188,10 @@ class DomainTypesTest {
             )
         val alreadyRemembered = linked.copy(remoteId = null, rememberedRemoteId = WidgetId("remembered"))
 
-        assertThat(linked.unlink(UnlinkReason.ManualDetach, instant).rememberedRemoteId).isEqualTo(widgetId)
-        assertThat(alreadyRemembered.unlink(UnlinkReason.ReplacedByRelink, instant).rememberedRemoteId)
+        assertThat(linked.unlink(instant).rememberedRemoteId).isEqualTo(widgetId)
+        assertThat(alreadyRemembered.unlink(instant).rememberedRemoteId)
             .isEqualTo(WidgetId("remembered"))
-        assertThat(linked.unlink(UnlinkReason.Policy("not in scope"), instant).lifecycle)
+        assertThat(linked.unlink(instant).lifecycle)
             .isEqualTo(SyncRegistrationLifecycle.UNLINKED)
 
         val policy = UnlinkReason.Policy("not in scope")
@@ -340,9 +340,8 @@ class DomainTypesTest {
         )
     }
 
-    @Test
     // Structural threshold: this generated-contract test covers all remote fetch/page variants.
-    @Suppress("LongMethod")
+    @Test
     fun `remote changes pages and fetch variants expose defaults and generated members`() {
         val remote = remoteRecord()
         val upsert = RemoteChange.Upsert(remote)
@@ -356,11 +355,6 @@ class DomainTypesTest {
             )
         val retryingPage = page.copy(retryAfter = Duration.ofSeconds(3))
         val failure = SyncFailure(SyncFailureKind.REMOTE_TIMEOUT, "timeout", retryable = true)
-        val found = RemoteFetch.Found(page)
-        val foundRecord = RemoteFetch.Found(remote)
-        val missing = RemoteFetch.Missing(MissingReason.GONE)
-        val failed = RemoteFetch.Failed(failure)
-        val partial = RemoteFetch.Partial(page, failure)
 
         assertThat(upsert.externalId).isEqualTo(widgetId)
         assertThat(upsert.version).isEqualTo(remote.version)
@@ -387,6 +381,20 @@ class DomainTypesTest {
         assertThat(page).isNotEqualTo(retryingPage)
         assertThat(page.hashCode()).isEqualTo(page.copy().hashCode())
         assertThat(page.toString()).contains("next", "high")
+
+        assertFetchVariants(page, remote, failure)
+    }
+
+    private fun assertFetchVariants(
+        page: RemotePage<RemoteWidget, WidgetId, WidgetKey>,
+        remote: RemoteRecord<RemoteWidget, WidgetId, WidgetKey>,
+        failure: SyncFailure,
+    ) {
+        val found = RemoteFetch.Found(page)
+        val foundRecord = RemoteFetch.Found(remote)
+        val missing = RemoteFetch.Missing(MissingReason.GONE)
+        val failed = RemoteFetch.Failed(failure)
+        val partial = RemoteFetch.Partial(page, failure)
 
         assertThat(found.component1()).isEqualTo(page)
         assertThat(found.copy()).isEqualTo(found)

@@ -172,7 +172,7 @@ class SyncEntityService<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             val localAggregate =
                 ports.localRepository.findByRemoteIdIncludingDeleted(command.externalId, context.scope, context)
 
-            val decision: SyncDecision<A, R, RID> =
+            val decision: SyncDecision<A, R, RID, KEY> =
                 reconciliation.reconcileOne(localAggregate, remoteRecord?.record, observedAt)
 
             executor.execute(context, decision, this)

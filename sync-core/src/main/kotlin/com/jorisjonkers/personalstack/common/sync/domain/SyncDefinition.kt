@@ -36,7 +36,7 @@ interface SyncProjection<A : Any, R : Any, RID : Any, KEY : Any> {
  * action. Implementations own aggregate invariants and field mapping. They are called inside the
  * transaction; for dry-run they are invoked only if documented pure.
  */
-interface SyncMapper<A : Any, R : Any, SCOPE : Any> {
+interface SyncMapper<A : Any, R : Any, RID : Any, SCOPE : Any> {
     fun create(
         remote: R,
         context: SyncContext<SCOPE>,
@@ -65,7 +65,7 @@ interface SyncMapper<A : Any, R : Any, SCOPE : Any> {
 
     fun delete(
         local: A,
-        signal: RemoteDeleteSignal<*>,
+        signal: RemoteDeleteSignal<RID>,
         context: SyncContext<SCOPE>,
     ): A
 
@@ -86,11 +86,11 @@ fun interface ImportPolicy<R : Any> {
  * reached when remote absence is authoritative (never on a [RemoteFetch.Failed]). The fail-closed
  * default a consumer should pick is a conflict; the worked example chooses delete/unlink.
  */
-fun interface MissingRemotePolicy<A : Any, RID : Any, KEY : Any> {
+fun interface MissingRemotePolicy<A : Any, R : Any, RID : Any, KEY : Any> {
     fun decide(
         local: LocalRecord<A, RID, KEY>,
         observedAt: Instant,
-    ): SyncDecision<A, Nothing, RID>
+    ): SyncDecision<A, R, RID, KEY>
 }
 
 /** Which side wins on divergence. The framework's reconciliation is remote-authoritative by default. */
@@ -126,7 +126,7 @@ data class SyncExecutionOptions(
  */
 data class SyncPolicies<A : Any, R : Any, RID : Any, KEY : Any>(
     val conflictPolicy: ConflictPolicy<A, R, RID, KEY> = ConflictPolicy.failClosed(),
-    val missingRemotePolicy: MissingRemotePolicy<A, RID, KEY>,
+    val missingRemotePolicy: MissingRemotePolicy<A, R, RID, KEY>,
     val importPolicy: ImportPolicy<R> = ImportPolicy { true },
 )
 
@@ -140,7 +140,7 @@ data class SyncDefinition<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     val localProjector: LocalProjector<A, RID, KEY>,
     val remoteProjector: RemoteProjector<R, RID, KEY>,
     val differ: SyncDiffer<A, R>,
-    val mapper: SyncMapper<A, R, SCOPE>,
+    val mapper: SyncMapper<A, R, RID, SCOPE>,
     val matchPlan: MatchPlan<A, R, RID, KEY>,
     val policies: SyncPolicies<A, R, RID, KEY>,
     val execution: SyncExecutionOptions = SyncExecutionOptions(),
