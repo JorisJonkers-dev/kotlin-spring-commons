@@ -111,7 +111,6 @@ class ApplicationTracingAspectTest {
         )
     }
 
-    @Suppress("FunctionOnlyReturningConstant")
     @Service
     open class TracedService {
         open fun greet(name: String): String = "hello $name"
@@ -126,12 +125,11 @@ class ApplicationTracingAspectTest {
         open fun boom(): Nothing = error("nope")
     }
 
-    @Suppress("FunctionOnlyReturningConstant")
     @Service
     open class SensitiveTokenService {
         open fun createToken(
             username: String,
             password: String,
-        ): String = "token-$username"
+        ): String = "$username:${password.length}"
     }
 }

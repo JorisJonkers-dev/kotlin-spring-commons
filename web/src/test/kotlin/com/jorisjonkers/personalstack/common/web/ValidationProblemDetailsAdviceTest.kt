@@ -78,7 +78,6 @@ class ValidationProblemDetailsAdviceTest {
         assertThat(problem.detail).isEqualTo("Validation failed for request.")
     }
 
-    @Suppress("UNUSED_PARAMETER")
     private class Handler {
         fun create(request: CreateWidgetRequest) = request
     }

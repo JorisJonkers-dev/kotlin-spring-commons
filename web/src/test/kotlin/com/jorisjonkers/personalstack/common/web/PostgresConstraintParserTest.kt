@@ -77,24 +77,35 @@ class PostgresConstraintParserTest {
         return current
     }
 
-    @Suppress("unused", "MemberVisibilityCanBePrivate")
     private class FakePsqlException(
         message: String? = "fake psql exception",
         private val serverErrorMessage: FakeServerErrorMessage? = null,
         private val sqlState: String? = null,
-    ) : RuntimeException(message) {
-        fun getServerErrorMessage(): FakeServerErrorMessage? = serverErrorMessage
+    ) : RuntimeException(message),
+        PsqlErrorShape {
+        override fun getServerErrorMessage(): FakeServerErrorMessage? = serverErrorMessage
 
-        fun getSQLState(): String? = sqlState
+        override fun getSQLState(): String? = sqlState
     }
 
-    @Suppress("unused", "MemberVisibilityCanBePrivate")
     private class FakeServerErrorMessage(
         private val constraint: String? = null,
         private val detail: String? = null,
-    ) {
-        fun getConstraint(): String? = constraint
+    ) : ServerErrorMessageShape {
+        override fun getConstraint(): String? = constraint
 
-        fun getDetail(): String? = detail
+        override fun getDetail(): String? = detail
+    }
+
+    private interface PsqlErrorShape {
+        fun getServerErrorMessage(): FakeServerErrorMessage?
+
+        fun getSQLState(): String?
+    }
+
+    private interface ServerErrorMessageShape {
+        fun getConstraint(): String?
+
+        fun getDetail(): String?
     }
 }

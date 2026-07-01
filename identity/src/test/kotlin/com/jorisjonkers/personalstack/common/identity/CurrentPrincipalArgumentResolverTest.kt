@@ -7,23 +7,24 @@ import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestAttributes
 import org.springframework.web.context.request.ServletWebRequest
 import java.util.UUID
+import kotlin.reflect.KFunction
 
 class CurrentPrincipalArgumentResolverTest {
     private val resolver = CurrentPrincipalArgumentResolver()
 
     @Test
     fun `supports forward auth principal parameters`() {
-        assertThat(resolver.supportsParameter(parameter("principalParameter"))).isTrue()
+        assertThat(resolver.supportsParameter(parameter(::principalParameter))).isTrue()
     }
 
     @Test
     fun `supports current principal annotated parameters`() {
-        assertThat(resolver.supportsParameter(parameter("annotatedParameter"))).isTrue()
+        assertThat(resolver.supportsParameter(parameter(::annotatedParameter))).isTrue()
     }
 
     @Test
     fun `does not support unrelated parameters`() {
-        assertThat(resolver.supportsParameter(parameter("plainParameter"))).isFalse()
+        assertThat(resolver.supportsParameter(parameter(::plainParameter))).isFalse()
     }
 
     @Test
@@ -44,7 +45,7 @@ class CurrentPrincipalArgumentResolverTest {
 
         val resolved =
             resolver.resolveArgument(
-                parameter("principalParameter"),
+                parameter(::principalParameter),
                 null,
                 webRequest,
                 null,
@@ -57,7 +58,7 @@ class CurrentPrincipalArgumentResolverTest {
     fun `resolves null when request attribute is absent`() {
         val resolved =
             resolver.resolveArgument(
-                parameter("principalParameter"),
+                parameter(::principalParameter),
                 null,
                 ServletWebRequest(MockHttpServletRequest()),
                 null,
@@ -66,20 +67,23 @@ class CurrentPrincipalArgumentResolverTest {
         assertThat(resolved).isNull()
     }
 
-    private fun parameter(methodName: String): MethodParameter =
+    private fun parameter(method: KFunction<*>): MethodParameter =
         MethodParameter(
-            javaClass.declaredMethods.single { method -> method.name == methodName },
+            javaClass.declaredMethods.single { candidate -> candidate.name == method.name },
             0,
         )
 
-    @Suppress("unused")
-    private fun principalParameter(principal: ForwardAuthPrincipal) = principal
+    private fun principalParameter(principal: ForwardAuthPrincipal) {
+        check(principal.userId.version() > 0)
+    }
 
-    @Suppress("unused")
     private fun annotatedParameter(
         @CurrentPrincipal principal: String,
-    ) = principal
+    ) {
+        check(principal.isNotBlank())
+    }
 
-    @Suppress("unused")
-    private fun plainParameter(principal: String) = principal
+    private fun plainParameter(principal: String) {
+        check(principal.isNotBlank())
+    }
 }

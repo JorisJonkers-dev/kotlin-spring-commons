@@ -63,10 +63,9 @@ private const val GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET = 1000
  */
 @RestControllerAdvice
 @Order(Ordered.HIGHEST_PRECEDENCE + GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET)
-@Suppress("TooManyFunctions", "LargeClass")
-open class GlobalExceptionHandler {
-    private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
+open class GlobalExceptionHandler : ServerExceptionHandlers()
 
+open class NotFoundExceptionHandlers : ProblemDetailSupport() {
     @ExceptionHandler(NotFoundException::class)
     fun handleNotFound(
         ex: NotFoundException,
@@ -75,11 +74,13 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.NOT_FOUND)
         val body =
             problem(
-                type = ProblemTypes.named("not-found"),
-                title = "Resource Not Found",
-                status = HttpStatus.NOT_FOUND,
-                detail = ex.message,
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("not-found"),
+                    title = "Resource Not Found",
+                    status = HttpStatus.NOT_FOUND,
+                    detail = ex.message,
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
     }
@@ -92,11 +93,13 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.NOT_FOUND)
         val body =
             problem(
-                type = ProblemTypes.named("not-found"),
-                title = "Resource Not Found",
-                status = HttpStatus.NOT_FOUND,
-                detail = ex.message ?: "The referenced resource does not exist",
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("not-found"),
+                    title = "Resource Not Found",
+                    status = HttpStatus.NOT_FOUND,
+                    detail = ex.message ?: "The referenced resource does not exist",
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
     }
@@ -109,15 +112,19 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.NOT_FOUND)
         val body =
             problem(
-                type = ProblemTypes.named("not-found"),
-                title = "Resource Not Found",
-                status = HttpStatus.NOT_FOUND,
-                detail = ex.message ?: "No matching record",
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("not-found"),
+                    title = "Resource Not Found",
+                    status = HttpStatus.NOT_FOUND,
+                    detail = ex.message ?: "No matching record",
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
     }
+}
 
+open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
     @ExceptionHandler(DomainException::class)
     fun handleDomain(
         ex: DomainException,
@@ -126,16 +133,17 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.BAD_REQUEST)
         val body =
             problem(
-                type =
-                    ProblemTypes.named(ex.code),
-                title =
-                    ex.code
-                        .replace('_', ' ')
-                        .lowercase()
-                        .replaceFirstChar { it.uppercaseChar() },
-                status = HttpStatus.BAD_REQUEST,
-                detail = ex.message,
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named(ex.code),
+                    title =
+                        ex.code
+                            .replace('_', ' ')
+                            .lowercase()
+                            .replaceFirstChar { it.uppercaseChar() },
+                    status = HttpStatus.BAD_REQUEST,
+                    detail = ex.message,
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
     }
@@ -148,11 +156,13 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.BAD_REQUEST)
         val body =
             problem(
-                type = ProblemTypes.named("bad-request"),
-                title = "Bad Request",
-                status = HttpStatus.BAD_REQUEST,
-                detail = ex.message ?: "Invalid request",
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("bad-request"),
+                    title = "Bad Request",
+                    status = HttpStatus.BAD_REQUEST,
+                    detail = ex.message ?: "Invalid request",
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
     }
@@ -165,15 +175,19 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.CONFLICT)
         val body =
             problem(
-                type = ProblemTypes.named("conflict"),
-                title = "Conflict",
-                status = HttpStatus.CONFLICT,
-                detail = ex.message ?: "Request conflicts with current state",
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("conflict"),
+                    title = "Conflict",
+                    status = HttpStatus.CONFLICT,
+                    detail = ex.message ?: "Request conflicts with current state",
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body)
     }
+}
 
+open class ValidationExceptionHandlers : DomainExceptionHandlers() {
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(
         ex: MethodArgumentNotValidException,
@@ -190,12 +204,14 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
-                type = ProblemTypes.named("validation-error"),
-                title = "Validation Error",
-                status = HttpStatus.UNPROCESSABLE_ENTITY,
-                detail = "One or more fields failed validation",
-                request = request,
-                errors = fieldErrors,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("validation-error"),
+                    title = "Validation Error",
+                    status = HttpStatus.UNPROCESSABLE_ENTITY,
+                    detail = "One or more fields failed validation",
+                    request = request,
+                    extensions = ProblemDetailExtensions(errors = fieldErrors),
+                ),
             )
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
     }
@@ -213,12 +229,14 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
-                type = ProblemTypes.named("validation-error"),
-                title = "Validation Error",
-                status = HttpStatus.UNPROCESSABLE_ENTITY,
-                detail = "One or more fields failed validation",
-                request = request,
-                errors = fieldErrors,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("validation-error"),
+                    title = "Validation Error",
+                    status = HttpStatus.UNPROCESSABLE_ENTITY,
+                    detail = "One or more fields failed validation",
+                    request = request,
+                    extensions = ProblemDetailExtensions(errors = fieldErrors),
+                ),
             )
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
     }
@@ -239,16 +257,20 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
-                type = ProblemTypes.named("validation-error"),
-                title = "Validation Error",
-                status = HttpStatus.UNPROCESSABLE_ENTITY,
-                detail = "One or more parameters failed validation",
-                request = request,
-                errors = fieldErrors,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("validation-error"),
+                    title = "Validation Error",
+                    status = HttpStatus.UNPROCESSABLE_ENTITY,
+                    detail = "One or more parameters failed validation",
+                    request = request,
+                    extensions = ProblemDetailExtensions(errors = fieldErrors),
+                ),
             )
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
     }
+}
 
+open class RequestExceptionHandlers : DataExceptionHandlers() {
     @ExceptionHandler(HttpMediaTypeNotSupportedException::class)
     fun handleMediaTypeNotSupported(
         ex: HttpMediaTypeNotSupportedException,
@@ -257,39 +279,15 @@ open class GlobalExceptionHandler {
         logClientError(ex, request, HttpStatus.UNSUPPORTED_MEDIA_TYPE)
         val body =
             problem(
-                type = ProblemTypes.named("unsupported-media-type"),
-                title = "Unsupported Media Type",
-                status = HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                detail = ex.message,
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("unsupported-media-type"),
+                    title = "Unsupported Media Type",
+                    status = HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    detail = ex.message,
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(body)
-    }
-
-    @ExceptionHandler(DataIntegrityViolationException::class)
-    @Suppress("LongMethod")
-    fun handleDataIntegrity(
-        ex: DataIntegrityViolationException,
-        request: WebRequest?,
-    ): ResponseEntity<ProblemDetail> {
-        val info = PostgresConstraintParser.parse(ex)
-        val detail =
-            info.detail
-                ?: "Database constraint violation: ${ex.mostSpecificCause.message ?: "no message"}"
-        logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
-        val body =
-            problem(
-                type = ProblemTypes.named("constraint-violation"),
-                title = "Constraint violation",
-                status = HttpStatus.UNPROCESSABLE_ENTITY,
-                detail = detail,
-                request = request,
-                errors = info.column?.let { listOf(FieldError(field = it, message = info.shortMessage())) }.orEmpty(),
-                constraint = info.constraint,
-                column = info.column,
-                referencedTable = info.referencedTable,
-            )
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
@@ -300,15 +298,70 @@ open class GlobalExceptionHandler {
         log.debug("Unreadable request body: {}", ex.message)
         val body =
             problem(
-                type = ProblemTypes.named("bad-request"),
-                title = "Bad Request",
-                status = HttpStatus.BAD_REQUEST,
-                detail = "Malformed or unreadable request body",
-                request = request,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("bad-request"),
+                    title = "Bad Request",
+                    status = HttpStatus.BAD_REQUEST,
+                    detail = "Malformed or unreadable request body",
+                    request = request,
+                ),
             )
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
     }
+}
 
+open class DataExceptionHandlers : ValidationExceptionHandlers() {
+    @ExceptionHandler(DataIntegrityViolationException::class)
+    fun handleDataIntegrity(
+        ex: DataIntegrityViolationException,
+        request: WebRequest?,
+    ): ResponseEntity<ProblemDetail> {
+        val info = PostgresConstraintParser.parse(ex)
+        logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
+        val body = dataIntegrityProblem(ex, request, info)
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+    }
+
+    private fun dataIntegrityProblem(
+        ex: DataIntegrityViolationException,
+        request: WebRequest?,
+        info: PostgresConstraintParser.ConstraintInfo,
+    ): ProblemDetail {
+        val detail =
+            info.detail
+                ?: "Database constraint violation: ${ex.mostSpecificCause.message ?: "no message"}"
+        return problem(
+            ProblemDetailSpec(
+                type = ProblemTypes.named("constraint-violation"),
+                title = "Constraint violation",
+                status = HttpStatus.UNPROCESSABLE_ENTITY,
+                detail = detail,
+                request = request,
+                extensions =
+                    ProblemDetailExtensions(
+                        errors =
+                            info.column
+                                ?.let {
+                                    listOf(
+                                        FieldError(
+                                            field = it,
+                                            message = info.shortMessage(),
+                                        ),
+                                    )
+                                }.orEmpty(),
+                        database =
+                            DatabaseProblemExtension(
+                                constraint = info.constraint,
+                                column = info.column,
+                                referencedTable = info.referencedTable,
+                            ),
+                    ),
+            ),
+        )
+    }
+}
+
+open class ServerExceptionHandlers : RequestExceptionHandlers() {
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(
         ex: Exception,
@@ -326,16 +379,69 @@ open class GlobalExceptionHandler {
         )
         val body =
             problem(
-                type = ProblemTypes.named("internal-error"),
-                title = "Internal Server Error",
-                status = HttpStatus.INTERNAL_SERVER_ERROR,
-                detail = "${ex.javaClass.simpleName}: $summary",
-                request = request,
-                traceId = traceId,
-                exception = ex.javaClass.name,
+                ProblemDetailSpec(
+                    type = ProblemTypes.named("internal-error"),
+                    title = "Internal Server Error",
+                    status = HttpStatus.INTERNAL_SERVER_ERROR,
+                    detail = "${ex.javaClass.simpleName}: $summary",
+                    request = request,
+                    extensions =
+                        ProblemDetailExtensions(
+                            traceId = traceId,
+                            exception = ex.javaClass.name,
+                        ),
+                ),
             )
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body)
     }
+
+    private fun exceptionSummary(ex: Exception): String {
+        val raw = ex.message ?: ex.cause?.message ?: "no message"
+        // First non-blank line, with a generous 500 char cap so log
+        // hash searches still match production payloads.
+        val firstLine = raw.lineSequence().firstOrNull { it.isNotBlank() } ?: raw
+        return if (firstLine.length > MAX_DETAIL_LENGTH) {
+            firstLine.take(MAX_DETAIL_LENGTH) + "…"
+        } else {
+            firstLine
+        }
+    }
+
+    private companion object {
+        private const val MAX_DETAIL_LENGTH = 500
+    }
+}
+
+data class ProblemDetailSpec(
+    val type: URI,
+    val title: String,
+    val status: HttpStatus,
+    val detail: String?,
+    val request: WebRequest?,
+    val extensions: ProblemDetailExtensions = ProblemDetailExtensions(),
+)
+
+data class ProblemDetailExtensions(
+    val errors: List<FieldError> = emptyList(),
+    val traceId: String? = null,
+    val exception: String? = null,
+    val kubernetes: KubernetesProblemExtension? = null,
+    val database: DatabaseProblemExtension? = null,
+)
+
+data class KubernetesProblemExtension(
+    val code: Int?,
+    val reason: String?,
+)
+
+data class DatabaseProblemExtension(
+    val constraint: String?,
+    val column: String?,
+    val referencedTable: String?,
+)
+
+open class ProblemDetailSupport {
+    protected val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
     /**
      * Shared field-population helper. Keeping it `protected` so the
@@ -343,36 +449,21 @@ open class GlobalExceptionHandler {
      * lean on the same envelope shape (instance URI + traceId
      * extraction) without duplicating the boilerplate.
      */
-    @Suppress("LongParameterList")
-    protected fun problem(
-        type: URI,
-        title: String,
-        status: HttpStatus,
-        detail: String?,
-        request: WebRequest?,
-        errors: List<FieldError> = emptyList(),
-        traceId: String? = null,
-        exception: String? = null,
-        kubernetesCode: Int? = null,
-        kubernetesReason: String? = null,
-        constraint: String? = null,
-        column: String? = null,
-        referencedTable: String? = null,
-    ): ProblemDetail =
+    protected fun problem(spec: ProblemDetailSpec): ProblemDetail =
         ProblemDetail(
-            type = type,
-            title = title,
-            status = status.value(),
-            detail = detail,
-            instance = requestPath(request)?.let(URI::create),
-            errors = errors,
-            traceId = traceId,
-            exception = exception,
-            kubernetesCode = kubernetesCode,
-            kubernetesReason = kubernetesReason,
-            constraint = constraint,
-            column = column,
-            referencedTable = referencedTable,
+            type = spec.type,
+            title = spec.title,
+            status = spec.status.value(),
+            detail = spec.detail,
+            instance = requestPath(spec.request)?.let(URI::create),
+            errors = spec.extensions.errors,
+            traceId = spec.extensions.traceId,
+            exception = spec.extensions.exception,
+            kubernetesCode = spec.extensions.kubernetes?.code,
+            kubernetesReason = spec.extensions.kubernetes?.reason,
+            constraint = spec.extensions.database?.constraint,
+            column = spec.extensions.database?.column,
+            referencedTable = spec.extensions.database?.referencedTable,
         )
 
     protected fun currentTraceId(): String? = MDC.get("traceId") ?: MDC.get("trace_id")
@@ -389,7 +480,7 @@ open class GlobalExceptionHandler {
                 }.getOrNull()
         }
 
-    private fun logClientError(
+    protected fun logClientError(
         ex: Exception,
         request: WebRequest?,
         status: HttpStatus,
@@ -404,21 +495,5 @@ open class GlobalExceptionHandler {
                 ex.message,
             )
         }
-    }
-
-    private fun exceptionSummary(ex: Exception): String {
-        val raw = ex.message ?: ex.cause?.message ?: "no message"
-        // First non-blank line, with a generous 500 char cap so log
-        // hash searches still match production payloads.
-        val firstLine = raw.lineSequence().firstOrNull { it.isNotBlank() } ?: raw
-        return if (firstLine.length > MAX_DETAIL_LENGTH) {
-            firstLine.take(MAX_DETAIL_LENGTH) + "…"
-        } else {
-            firstLine
-        }
-    }
-
-    companion object {
-        private const val MAX_DETAIL_LENGTH = 500
     }
 }

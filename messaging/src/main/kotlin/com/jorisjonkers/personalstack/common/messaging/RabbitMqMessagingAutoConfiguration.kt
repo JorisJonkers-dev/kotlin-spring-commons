@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION")
-
 package com.jorisjonkers.personalstack.common.messaging
 
 import org.springframework.amqp.core.BindingBuilder
@@ -8,7 +6,7 @@ import org.springframework.amqp.core.Declarables
 import org.springframework.amqp.core.DirectExchange
 import org.springframework.amqp.core.QueueBuilder
 import org.springframework.amqp.rabbit.core.RabbitTemplate
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter
 import org.springframework.amqp.support.converter.MessageConverter
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
@@ -47,7 +45,7 @@ class RabbitMqMessagingAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(MessageConverter::class)
-    fun rabbitMqMessageConverter(): MessageConverter = Jackson2JsonMessageConverter()
+    fun rabbitMqMessageConverter(): MessageConverter = JacksonJsonMessageConverter()
 
     @Bean
     @ConditionalOnBean(RabbitTemplate::class)

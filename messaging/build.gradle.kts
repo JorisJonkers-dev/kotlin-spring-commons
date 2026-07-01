@@ -12,6 +12,7 @@ dependencies {
 
     implementation(libs.jackson.datatype.jsr310)
     implementation(libs.jackson.module.kotlin)
+    implementation(libs.tools.jackson.databind)
 
     compileOnly(libs.spring.boot.autoconfigure)
     compileOnly(libs.spring.boot.starter.amqp)

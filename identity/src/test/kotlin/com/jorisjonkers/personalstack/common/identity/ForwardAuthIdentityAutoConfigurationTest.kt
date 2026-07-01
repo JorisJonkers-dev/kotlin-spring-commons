@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.boot.web.servlet.FilterRegistrationBean
-import org.springframework.security.oauth2.core.OAuth2TokenValidator
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
@@ -117,18 +117,18 @@ class ForwardAuthIdentityAutoConfigurationTest {
 
     @Test
     fun `audience validator accepts tokens with the configured audience`() {
-        val validator = audienceValidator("personal-stack")
-
-        val result = validator.validate(jwt(audience = listOf("personal-stack", "other-api")))
+        val result =
+            audienceValidationResult(
+                "personal-stack",
+                jwt(audience = listOf("personal-stack", "other-api")),
+            )
 
         assertThat(result.hasErrors()).isFalse()
     }
 
     @Test
     fun `audience validator rejects tokens without the configured audience`() {
-        val validator = audienceValidator("personal-stack")
-
-        val result = validator.validate(jwt(audience = listOf("other-api")))
+        val result = audienceValidationResult("personal-stack", jwt(audience = listOf("other-api")))
 
         assertThat(result.hasErrors()).isTrue()
         val error = result.errors.single()
@@ -136,13 +136,23 @@ class ForwardAuthIdentityAutoConfigurationTest {
         assertThat(error.description).isEqualTo("The required audience is missing.")
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun audienceValidator(audience: String): OAuth2TokenValidator<Jwt> {
+    private fun audienceValidationResult(
+        audience: String,
+        jwt: Jwt,
+    ): OAuth2TokenValidatorResult {
         val validatorClass =
             ForwardAuthIdentityAutoConfiguration::class.java.declaredClasses
                 .single { it.simpleName == "AudienceValidator" }
         val constructor = validatorClass.getDeclaredConstructor(String::class.java).apply { isAccessible = true }
-        return constructor.newInstance(audience) as OAuth2TokenValidator<Jwt>
+        val validator = constructor.newInstance(audience)
+        val validate =
+            validatorClass.methods.single { method ->
+                method.name == "validate" &&
+                    method.parameterCount == 1 &&
+                    method.parameterTypes.single() == Jwt::class.java &&
+                    method.returnType == OAuth2TokenValidatorResult::class.java
+            }
+        return validate.invoke(validator, jwt) as OAuth2TokenValidatorResult
     }
 
     private fun jwt(audience: List<String>): Jwt =
