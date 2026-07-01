@@ -94,29 +94,34 @@ data class SyncRegistration<RID : Any>(
          * [rememberedRemoteId]), else never-linked. [rememberedRemoteId] is NOT defaulted from
          * [remoteId] — pass it explicitly to retain link history the aggregate actually stored.
          */
-        fun <RID : Any> inferred(
-            remoteId: RID?,
-            rememberedRemoteId: RID? = null,
-            remotelyDeletedAt: Instant? = null,
-            changedAt: Instant? = remotelyDeletedAt,
-            version: VersionStamp? = null,
-            lifecycle: SyncRegistrationLifecycle? = null,
-        ): SyncRegistration<RID> =
+        fun <RID : Any> inferred(input: SyncRegistrationInference<RID>): SyncRegistration<RID> =
             SyncRegistration(
-                remoteId = remoteId,
-                rememberedRemoteId = rememberedRemoteId,
+                remoteId = input.remoteId,
+                rememberedRemoteId = input.rememberedRemoteId,
                 lifecycle =
-                    lifecycle ?: when {
-                        remotelyDeletedAt != null -> SyncRegistrationLifecycle.REMOTELY_DELETED
-                        remoteId != null -> SyncRegistrationLifecycle.LINKED
-                        rememberedRemoteId != null -> SyncRegistrationLifecycle.UNLINKED
+                    input.lifecycle ?: when {
+                        input.remotelyDeletedAt != null -> SyncRegistrationLifecycle.REMOTELY_DELETED
+                        input.remoteId != null -> SyncRegistrationLifecycle.LINKED
+                        input.rememberedRemoteId != null -> SyncRegistrationLifecycle.UNLINKED
                         else -> SyncRegistrationLifecycle.NEVER_LINKED
                     },
-                changedAt = changedAt,
-                version = version,
+                changedAt = input.changedAt,
+                version = input.version,
             )
+
+        fun <RID : Any> inferred(remoteId: RID?): SyncRegistration<RID> =
+            inferred(SyncRegistrationInference(remoteId = remoteId))
     }
 }
+
+data class SyncRegistrationInference<RID : Any>(
+    val remoteId: RID?,
+    val rememberedRemoteId: RID? = null,
+    val remotelyDeletedAt: Instant? = null,
+    val changedAt: Instant? = remotelyDeletedAt,
+    val version: VersionStamp? = null,
+    val lifecycle: SyncRegistrationLifecycle? = null,
+)
 
 /** Coarse link state of a local aggregate relative to its remote counterpart. */
 enum class SyncRegistrationLifecycle {

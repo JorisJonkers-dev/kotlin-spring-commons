@@ -42,8 +42,11 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.RemoteWidget
 import com.jorisjonkers.personalstack.common.sync.testsupport.SyncFixtures
 import com.jorisjonkers.personalstack.common.sync.testsupport.Widget
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarness
+import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarnessExecution
+import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarnessPolicies
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetId
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
+import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetLinkMetadata
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetMapper
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetMatchPass
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
@@ -311,7 +314,12 @@ class SyncEntityApplicationServiceTest {
         harness.remoteCatalog.onFetchOne(
             id,
             RemoteFetch.Partial(
-                remoteRecord(id.value, sku = "SKU-PARTIAL", name = "New", observedAt = FIXED),
+                remoteRecord(
+                    id.value,
+                    sku = "SKU-PARTIAL",
+                    name = "New",
+                    options = RemoteRecordFixtureOptions(observedAt = FIXED),
+                ),
                 failure(SyncFailureKind.REMOTE_PARTIAL, retryable = true),
             ),
         )
@@ -361,7 +369,10 @@ class SyncEntityApplicationServiceTest {
 
     @Test
     fun `entity missing remote unlinks when policy says unlink`() {
-        val harness = WidgetHarness.build(missingRemotePolicy = WidgetHarness.UNLINK_MISSING)
+        val harness =
+            WidgetHarness.build(
+                policySet = WidgetHarnessPolicies(missingRemotePolicy = WidgetHarness.UNLINK_MISSING),
+            )
         val id = WidgetId("missing-unlink")
         harness.repository.seed(Widget.linked("local-unlink", id, "SKU-UNLINK", "Local"))
         harness.remoteCatalog.onFetchOne(id, RemoteFetch.Missing(MissingReason.NOT_FOUND))
@@ -482,8 +493,11 @@ class SyncEntityApplicationServiceTest {
                 id.value,
                 sku = "SKU-TOMBSTONE",
                 name = "Local",
-                lifecycle = RemoteRecordLifecycle.DELETED,
-                version = VersionStamp.Token("deleted-v1"),
+                options =
+                    RemoteRecordFixtureOptions(
+                        lifecycle = RemoteRecordLifecycle.DELETED,
+                        version = VersionStamp.Token("deleted-v1"),
+                    ),
             ),
         )
 
@@ -509,7 +523,10 @@ class SyncEntityApplicationServiceTest {
     @Test
     fun `entity retry decision from policy records a failed outcome`() {
         val retryAfter = Duration.ofSeconds(11)
-        val harness = WidgetHarness.build(missingRemotePolicy = retryMissingPolicy(retryAfter))
+        val harness =
+            WidgetHarness.build(
+                policySet = WidgetHarnessPolicies(missingRemotePolicy = retryMissingPolicy(retryAfter)),
+            )
         val id = WidgetId("retry-policy")
         harness.repository.seed(Widget.linked("local-retry", id, "SKU-RETRY", "Local"))
         harness.remoteCatalog.onFetchOne(id, RemoteFetch.Missing(MissingReason.NOT_FOUND))
@@ -529,7 +546,10 @@ class SyncEntityApplicationServiceTest {
 
     @Test
     fun `entity decision effects are appended and relayed after commit`() {
-        val harness = WidgetHarness.build(missingRemotePolicy = recalculatingUnlinkPolicy())
+        val harness =
+            WidgetHarness.build(
+                policySet = WidgetHarnessPolicies(missingRemotePolicy = recalculatingUnlinkPolicy()),
+            )
         val id = WidgetId("effect-unlink")
         harness.repository.seed(Widget.linked("local-effect", id, "SKU-EFFECT", "Local"))
 
@@ -552,7 +572,10 @@ class SyncListApplicationServiceTest {
     @Test
     fun `list per record executes import update equal restore relink and delete decisions`() {
         val scope = WidgetScope("list-decisions")
-        val harness = WidgetHarness.build(listTransactionMode = ListTransactionMode.PER_RECORD)
+        val harness =
+            WidgetHarness.build(
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.PER_RECORD),
+            )
         val importRecord = remoteRecord("list-import", sku = "SKU-IMPORT", name = "Imported")
         val updateId = WidgetId("list-update")
         val equalId = WidgetId("list-equal")
@@ -580,7 +603,7 @@ class SyncListApplicationServiceTest {
                                 deleteId.value,
                                 sku = "SKU-DELETE",
                                 name = "Delete Local",
-                                lifecycle = RemoteRecordLifecycle.DELETED,
+                                options = RemoteRecordFixtureOptions(lifecycle = RemoteRecordLifecycle.DELETED),
                             ),
                         ),
                     ),
@@ -601,8 +624,8 @@ class SyncListApplicationServiceTest {
         val scope = WidgetScope("list-recalc")
         val harness =
             WidgetHarness.build(
-                missingRemotePolicy = recalculatingUnlinkPolicy(),
-                listTransactionMode = ListTransactionMode.PER_RECORD,
+                policySet = WidgetHarnessPolicies(missingRemotePolicy = recalculatingUnlinkPolicy()),
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.PER_RECORD),
             )
         val id = WidgetId("list-recalc-local")
         harness.repository.seed(Widget.linked("local-recalc", id, "SKU-RECALC", "Local", scope))
@@ -623,7 +646,10 @@ class SyncListApplicationServiceTest {
     @Test
     fun `list partial page requeues and processes only present upserts`() {
         val scope = WidgetScope("list-partial")
-        val harness = WidgetHarness.build(listTransactionMode = ListTransactionMode.PER_RECORD)
+        val harness =
+            WidgetHarness.build(
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.PER_RECORD),
+            )
         harness.remoteCatalog.onFetchForScope(
             RemoteFetch.Partial(
                 remotePage(listOf(upsert(remoteRecord("partial-present", sku = "SKU-PRESENT", name = "Present")))),
@@ -658,7 +684,7 @@ class SyncListApplicationServiceTest {
 
         cases.forEach { (mode, expectedTransactions) ->
             val scope = WidgetScope("mode-$mode")
-            val harness = WidgetHarness.build(listTransactionMode = mode)
+            val harness = WidgetHarness.build(execution = WidgetHarnessExecution(listTransactionMode = mode))
             harness.remoteCatalog.onFetchForScope(
                 RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord("mode-$mode", sku = "SKU-$mode"))))),
             )
@@ -679,7 +705,10 @@ class SyncListApplicationServiceTest {
         val scope = WidgetScope("list-failure")
         val failId = WidgetId("fail-update")
         val okId = WidgetId("ok-update")
-        val harness = WidgetHarness.build(listTransactionMode = ListTransactionMode.PER_RECORD)
+        val harness =
+            WidgetHarness.build(
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.PER_RECORD),
+            )
         val definition = harness.definition.copy(mapper = FailingUpdateMapper(failId))
         harness.repository.seed(
             Widget.linked("local-fail", failId, "SKU-FAIL", "Old", scope),
@@ -719,7 +748,10 @@ class SyncListApplicationServiceTest {
         val requestedScope = WidgetScope("requested-scope")
         val otherScope = WidgetScope("other-scope")
         val id = WidgetId("stale-import")
-        val harness = WidgetHarness.build(listTransactionMode = ListTransactionMode.PER_RECORD)
+        val harness =
+            WidgetHarness.build(
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.PER_RECORD),
+            )
         harness.repository.seed(Widget.linked("local-stale", id, "SKU-STALE", "Same", otherScope))
         harness.remoteCatalog.onFetchForScope(
             RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord(id.value, sku = "SKU-STALE", name = "Same"))))),
@@ -811,7 +843,7 @@ class SyncListApplicationServiceTest {
         val scope = WidgetScope("conflict-scope")
         val harness =
             WidgetHarness.build(
-                listTransactionMode = ListTransactionMode.WHOLE_SCOPE,
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.WHOLE_SCOPE),
                 matchPasses = listOf(WidgetMatchPass.SKU),
             )
         harness.repository.seed(Widget.neverLinked("local-conflict", "SKU-CONFLICT", "Local", scope))
@@ -844,8 +876,8 @@ class SyncListApplicationServiceTest {
         val retryAfter = Duration.ofSeconds(13)
         val harness =
             WidgetHarness.build(
-                missingRemotePolicy = retryMissingPolicy(retryAfter),
-                listTransactionMode = ListTransactionMode.PER_RECORD,
+                policySet = WidgetHarnessPolicies(missingRemotePolicy = retryMissingPolicy(retryAfter)),
+                execution = WidgetHarnessExecution(listTransactionMode = ListTransactionMode.PER_RECORD),
             )
         harness.repository.seed(
             Widget.linked("local-list-retry", WidgetId("list-retry-id"), "SKU-RETRY", "Local", scope),
@@ -1159,7 +1191,7 @@ private class FailingUpdateMapper(
         context: SyncContext<WidgetScope>,
     ): Widget {
         if (remote.id == failedId) {
-            throw IllegalStateException("rejecting ${remote.id.value}")
+            error("rejecting ${remote.id.value}")
         }
         return WidgetMapper.update(local, remote, changes, context)
     }
@@ -1201,10 +1233,7 @@ fun remoteRecord(
     id: String,
     sku: String = "SKU-$id",
     name: String = "Widget $id",
-    lifecycle: RemoteRecordLifecycle = RemoteRecordLifecycle.ACTIVE,
-    importable: Boolean = true,
-    version: VersionStamp? = null,
-    observedAt: Instant? = null,
+    options: RemoteRecordFixtureOptions = RemoteRecordFixtureOptions(),
 ): RemoteRecord<RemoteWidget, WidgetId, WidgetKey> {
     val widgetId = WidgetId(id)
     val remote =
@@ -1212,21 +1241,28 @@ fun remoteRecord(
             id = widgetId,
             sku = sku,
             name = name,
-            lifecycle = lifecycle,
-            importable = importable,
-            version = version,
-            observedAt = observedAt,
+            lifecycle = options.lifecycle,
+            importable = options.importable,
+            version = options.version,
+            observedAt = options.observedAt,
         )
     return RemoteRecord(
         record = remote,
         externalId = widgetId,
         keys = setOf(WidgetKey.Remote(widgetId), WidgetKey.Sku(sku)),
-        lifecycle = lifecycle,
-        importable = importable,
-        version = version,
-        observedAt = observedAt,
+        lifecycle = options.lifecycle,
+        importable = options.importable,
+        version = options.version,
+        observedAt = options.observedAt,
     )
 }
+
+data class RemoteRecordFixtureOptions(
+    val lifecycle: RemoteRecordLifecycle = RemoteRecordLifecycle.ACTIVE,
+    val importable: Boolean = true,
+    val version: VersionStamp? = null,
+    val observedAt: Instant? = null,
+)
 
 fun remotePage(
     changes: List<RemoteChange<RemoteWidget, WidgetId, WidgetKey>> = emptyList(),
@@ -1262,7 +1298,7 @@ fun unlinkedWidget(
     name: String,
     scope: WidgetScope = WidgetScope("default"),
 ): Widget {
-    val linked = Widget.linked(localId, remoteId, sku, name, scope, FIXED)
+    val linked = Widget.linked(localId, remoteId, sku, name, WidgetLinkMetadata(scope = scope, at = FIXED))
     return linked.copy(registration = linked.registration.unlink(FIXED))
 }
 

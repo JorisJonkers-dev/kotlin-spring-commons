@@ -65,11 +65,14 @@ private class SingleReconciliationDecider<A : Any, R : Any, RID : Any, KEY : Any
         when {
             localRecord != null && remoteRecord != null ->
                 pairedDecision(
-                    pass = null,
-                    localRaw = requireNotNull(localRaw),
-                    localRecord = localRecord,
-                    remoteRaw = requireNotNull(remoteRaw),
-                    remoteRecord = remoteRecord,
+                    match =
+                        MatchedRecords(
+                            pass = null,
+                            localRaw = requireNotNull(localRaw),
+                            localRecord = localRecord,
+                            remoteRaw = requireNotNull(remoteRaw),
+                            remoteRecord = remoteRecord,
+                        ),
                     observedAt = observedAt,
                 )
 
@@ -87,17 +90,13 @@ private class SingleReconciliationDecider<A : Any, R : Any, RID : Any, KEY : Any
         }
 
     fun pairedDecision(
-        pass: MatchPass<A, R, RID, KEY>?,
-        localRaw: A,
-        localRecord: LocalRecord<A, RID, KEY>,
-        remoteRaw: R,
-        remoteRecord: RemoteRecord<R, RID, KEY>,
+        match: MatchedRecords<A, R, RID, KEY>,
         observedAt: Instant,
     ): SyncDecision<A, R, RID, KEY> =
-        if (remoteRecord.lifecycle == RemoteRecordLifecycle.DELETED) {
-            remoteDeletedDecision(localRecord, remoteRecord, observedAt)
+        if (match.remoteRecord.lifecycle == RemoteRecordLifecycle.DELETED) {
+            remoteDeletedDecision(match.localRecord, match.remoteRecord, observedAt)
         } else {
-            activeRemoteDecision(pass, localRaw, localRecord, remoteRaw, remoteRecord)
+            activeRemoteDecision(match)
         }
 
     fun remoteOnlyDecision(
@@ -166,21 +165,29 @@ private class SingleReconciliationDecider<A : Any, R : Any, RID : Any, KEY : Any
             )
         }
 
-    private fun activeRemoteDecision(
-        pass: MatchPass<A, R, RID, KEY>?,
-        localRaw: A,
-        localRecord: LocalRecord<A, RID, KEY>,
-        remoteRaw: R,
-        remoteRecord: RemoteRecord<R, RID, KEY>,
-    ): SyncDecision<A, R, RID, KEY> {
-        val changes = differ.diff(localRaw, remoteRaw)
+    private fun activeRemoteDecision(match: MatchedRecords<A, R, RID, KEY>): SyncDecision<A, R, RID, KEY> {
+        val changes = differ.diff(match.localRaw, match.remoteRaw)
         return when {
-            localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED ->
-                SyncDecision.Restore<A, R, RID, KEY>(local = localRecord, remote = remoteRecord, changes = changes)
-            needsRelink(localRecord.registration, remoteRecord.externalId, pass) ->
-                SyncDecision.Relink<A, R, RID, KEY>(local = localRecord, remote = remoteRecord, changes = changes)
-            changes.isEmpty -> SyncDecision.Equal<A, R, RID, KEY>(local = localRecord, remote = remoteRecord)
-            else -> SyncDecision.Update<A, R, RID, KEY>(local = localRecord, remote = remoteRecord, changes = changes)
+            match.localRecord.registration.lifecycle == SyncRegistrationLifecycle.REMOTELY_DELETED ->
+                SyncDecision.Restore<A, R, RID, KEY>(
+                    local = match.localRecord,
+                    remote = match.remoteRecord,
+                    changes = changes,
+                )
+            needsRelink(match.localRecord.registration, match.remoteRecord.externalId, match.pass) ->
+                SyncDecision.Relink<A, R, RID, KEY>(
+                    local = match.localRecord,
+                    remote = match.remoteRecord,
+                    changes = changes,
+                )
+            changes.isEmpty ->
+                SyncDecision.Equal<A, R, RID, KEY>(local = match.localRecord, remote = match.remoteRecord)
+            else ->
+                SyncDecision.Update<A, R, RID, KEY>(
+                    local = match.localRecord,
+                    remote = match.remoteRecord,
+                    changes = changes,
+                )
         }
     }
 
@@ -233,55 +240,53 @@ private class MultiRecordReconciler<A : Any, R : Any, RID : Any, KEY : Any>(
         pass: MatchPass<A, R, RID, KEY>,
         observedAt: Instant,
     ) {
-        val remoteByKey = indexRemotesByKey(state.remainingRemotes, pass)
-        val consumedLocals = HashSet<Int>()
-        val consumedRemotes = HashSet<Int>()
+        val passState =
+            MatchPassState(
+                state = state,
+                pass = pass,
+                remoteByKey = indexRemotesByKey(state.remainingRemotes, pass),
+                consumedLocals = HashSet(),
+                consumedRemotes = HashSet(),
+                observedAt = observedAt,
+            )
 
-        matchLocals(state, pass, remoteByKey, consumedLocals, consumedRemotes, observedAt)
+        matchLocals(passState)
         if (pass.confidence == MatchConfidence.HARD) {
-            detectDuplicateLocals(state.remainingLocals, consumedLocals, pass).forEach { duplicate ->
+            detectDuplicateLocals(state.remainingLocals, passState.consumedLocals, pass).forEach { duplicate ->
                 state.decisions += duplicate.decision
-                consumedLocals += duplicate.localIndex
+                passState.consumedLocals += duplicate.localIndex
             }
         }
 
-        removeConsumed(state.remainingLocals, consumedLocals)
-        removeConsumed(state.remainingRemotes, consumedRemotes)
+        removeConsumed(state.remainingLocals, passState.consumedLocals)
+        removeConsumed(state.remainingRemotes, passState.consumedRemotes)
     }
 
-    private fun matchLocals(
-        state: ReconciliationState<A, R, RID, KEY>,
-        pass: MatchPass<A, R, RID, KEY>,
-        remoteByKey: Map<KEY, List<IndexedRemote<R, RID, KEY>>>,
-        consumedLocals: MutableSet<Int>,
-        consumedRemotes: MutableSet<Int>,
-        observedAt: Instant,
-    ) {
-        state.remainingLocals.forEachIndexed { localIndex, localEntry ->
-            if (localIndex in consumedLocals) return@forEachIndexed
-            val candidates = candidatesFor(localEntry.second, pass, remoteByKey, consumedRemotes)
+    private fun matchLocals(passState: MatchPassState<A, R, RID, KEY>) {
+        passState.state.remainingLocals.forEachIndexed { localIndex, localEntry ->
+            if (localIndex in passState.consumedLocals) return@forEachIndexed
+            val candidates =
+                candidatesFor(
+                    localEntry.second,
+                    passState.pass,
+                    passState.remoteByKey,
+                    passState.consumedRemotes,
+                )
             when (candidates.size) {
                 0 -> Unit
                 1 ->
                     consumePair(
-                        state,
-                        pass,
+                        passState,
                         localIndex,
                         localEntry,
                         candidates.first(),
-                        consumedLocals,
-                        consumedRemotes,
-                        observedAt,
                     )
                 else ->
                     consumeAmbiguous(
-                        state,
-                        pass,
+                        passState,
                         localIndex,
                         localEntry,
                         candidates,
-                        consumedLocals,
-                        consumedRemotes,
                     )
             }
         }
@@ -305,43 +310,39 @@ private class MultiRecordReconciler<A : Any, R : Any, RID : Any, KEY : Any>(
     }
 
     private fun consumePair(
-        state: ReconciliationState<A, R, RID, KEY>,
-        pass: MatchPass<A, R, RID, KEY>,
+        passState: MatchPassState<A, R, RID, KEY>,
         localIndex: Int,
         localEntry: Pair<A, LocalRecord<A, RID, KEY>>,
         candidate: RemoteCandidate<R, RID, KEY>,
-        consumedLocals: MutableSet<Int>,
-        consumedRemotes: MutableSet<Int>,
-        observedAt: Instant,
     ) {
-        consumedLocals += localIndex
-        consumedRemotes += candidate.remote.index
-        state.decisions +=
+        passState.consumedLocals += localIndex
+        passState.consumedRemotes += candidate.remote.index
+        passState.state.decisions +=
             decider.pairedDecision(
-                pass = pass,
-                localRaw = localEntry.first,
-                localRecord = localEntry.second,
-                remoteRaw = candidate.remote.raw,
-                remoteRecord = candidate.remote.record,
-                observedAt = observedAt,
+                match =
+                    MatchedRecords(
+                        pass = passState.pass,
+                        localRaw = localEntry.first,
+                        localRecord = localEntry.second,
+                        remoteRaw = candidate.remote.raw,
+                        remoteRecord = candidate.remote.record,
+                    ),
+                observedAt = passState.observedAt,
             )
     }
 
     private fun consumeAmbiguous(
-        state: ReconciliationState<A, R, RID, KEY>,
-        pass: MatchPass<A, R, RID, KEY>,
+        passState: MatchPassState<A, R, RID, KEY>,
         localIndex: Int,
         localEntry: Pair<A, LocalRecord<A, RID, KEY>>,
         candidates: List<RemoteCandidate<R, RID, KEY>>,
-        consumedLocals: MutableSet<Int>,
-        consumedRemotes: MutableSet<Int>,
     ) {
-        consumedLocals += localIndex
-        candidates.forEach { consumedRemotes += it.remote.index }
-        state.decisions +=
+        passState.consumedLocals += localIndex
+        candidates.forEach { passState.consumedRemotes += it.remote.index }
+        passState.state.decisions +=
             decider.conflict(
                 kind =
-                    if (pass.confidence == MatchConfidence.HARD) {
+                    if (passState.pass.confidence == MatchConfidence.HARD) {
                         SyncConflictKind.DUPLICATE_REMOTE_ID
                     } else {
                         SyncConflictKind.AMBIGUOUS_MATCH
@@ -349,8 +350,8 @@ private class MultiRecordReconciler<A : Any, R : Any, RID : Any, KEY : Any>(
                 local = localEntry.second,
                 remote = candidates.first().remote.record,
                 message =
-                    "local matched ${candidates.size} remotes in pass '${pass.name}' " +
-                        "(confidence=${pass.confidence})",
+                    "local matched ${candidates.size} remotes in pass '${passState.pass.name}' " +
+                        "(confidence=${passState.pass.confidence})",
             )
     }
 
@@ -425,6 +426,15 @@ private class MultiRecordReconciler<A : Any, R : Any, RID : Any, KEY : Any>(
         val decisions: MutableList<SyncDecision<A, R, RID, KEY>>,
     )
 
+    private data class MatchPassState<A : Any, R : Any, RID : Any, KEY : Any>(
+        val state: ReconciliationState<A, R, RID, KEY>,
+        val pass: MatchPass<A, R, RID, KEY>,
+        val remoteByKey: Map<KEY, List<IndexedRemote<R, RID, KEY>>>,
+        val consumedLocals: MutableSet<Int>,
+        val consumedRemotes: MutableSet<Int>,
+        val observedAt: Instant,
+    )
+
     private data class IndexedRemote<R : Any, RID : Any, KEY : Any>(
         val index: Int,
         val raw: R,
@@ -440,6 +450,14 @@ private class MultiRecordReconciler<A : Any, R : Any, RID : Any, KEY : Any>(
         val decision: SyncDecision.Conflict<A, R, RID, KEY>,
     )
 }
+
+private data class MatchedRecords<A : Any, R : Any, RID : Any, KEY : Any>(
+    val pass: MatchPass<A, R, RID, KEY>?,
+    val localRaw: A,
+    val localRecord: LocalRecord<A, RID, KEY>,
+    val remoteRaw: R,
+    val remoteRecord: RemoteRecord<R, RID, KEY>,
+)
 
 private fun <T> removeConsumed(
     records: MutableList<T>,

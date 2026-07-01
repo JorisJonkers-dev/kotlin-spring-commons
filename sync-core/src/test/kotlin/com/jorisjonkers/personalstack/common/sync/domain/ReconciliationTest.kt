@@ -1,6 +1,7 @@
 package com.jorisjonkers.personalstack.common.sync.domain
 
 import com.jorisjonkers.personalstack.common.sync.testsupport.RemoteWidget
+import com.jorisjonkers.personalstack.common.sync.testsupport.SyncContextFixtureOptions
 import com.jorisjonkers.personalstack.common.sync.testsupport.SyncFixtures
 import com.jorisjonkers.personalstack.common.sync.testsupport.Widget
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetHarness
@@ -68,9 +69,12 @@ class ReconciliationSingleTest {
                         id = "w-delete",
                         sku = "SKU-DELETE",
                         name = "old",
-                        lifecycle = RemoteRecordLifecycle.DELETED,
-                        version = version,
-                        observedAt = remoteObservedAt,
+                        options =
+                            RemoteWidgetOptions(
+                                lifecycle = RemoteRecordLifecycle.DELETED,
+                                version = version,
+                                observedAt = remoteObservedAt,
+                            ),
                     ),
                 observedAt = observedAt,
             )
@@ -82,7 +86,7 @@ class ReconciliationSingleTest {
                         id = "w-delete-fallback",
                         sku = "SKU-DELETE-FALLBACK",
                         name = "old",
-                        lifecycle = RemoteRecordLifecycle.DELETED,
+                        options = RemoteWidgetOptions(lifecycle = RemoteRecordLifecycle.DELETED),
                     ),
                 observedAt = observedAt,
             )
@@ -107,7 +111,7 @@ class ReconciliationSingleTest {
                         id = "w-already-deleted",
                         sku = "SKU-DELETED",
                         name = "old",
-                        lifecycle = RemoteRecordLifecycle.DELETED,
+                        options = RemoteWidgetOptions(lifecycle = RemoteRecordLifecycle.DELETED),
                     ),
                 observedAt = observedAt,
             )
@@ -131,13 +135,23 @@ class ReconciliationSingleTest {
         val deletedRemote =
             policyReconciliation.reconcileOne(
                 null,
-                remote("w-deleted-only", "SKU-DELETED-ONLY", "gone", lifecycle = RemoteRecordLifecycle.DELETED),
+                remote(
+                    "w-deleted-only",
+                    "SKU-DELETED-ONLY",
+                    "gone",
+                    RemoteWidgetOptions(lifecycle = RemoteRecordLifecycle.DELETED),
+                ),
                 observedAt,
             )
         val notImportableFlag =
             policyReconciliation.reconcileOne(
                 null,
-                remote("w-not-importable", "SKU-NOT-IMPORTABLE", "blocked", importable = false),
+                remote(
+                    "w-not-importable",
+                    "SKU-NOT-IMPORTABLE",
+                    "blocked",
+                    RemoteWidgetOptions(importable = false),
+                ),
                 observedAt,
             )
         val notImportablePolicy =
@@ -427,27 +441,8 @@ class ReconciliationManyTest {
 
         val plan =
             reconciliation.reconcileMany(
-                locals =
-                    listOf(
-                        Widget.linked("local-update", id("w-update"), "SKU-UPDATE", "old"),
-                        Widget.linked("local-delete", id("w-delete"), "SKU-DELETE", "old"),
-                        Widget.neverLinked("local-relink", "SKU-RELINK", "old"),
-                        Widget.linked("local-equal", id("w-equal"), "SKU-EQUAL", "same"),
-                        Widget.remotelyDeleted("local-restore", id("w-restore"), "SKU-RESTORE", "old"),
-                        Widget.neverLinked("local-unlink", "SKU-MISSING-UNLINK", "missing"),
-                        Widget.neverLinked("local-retry", "SKU-MISSING-RETRY", "missing"),
-                        Widget.neverLinked("local-conflict", "SKU-MISSING-CONFLICT", "missing"),
-                    ),
-                remotes =
-                    listOf(
-                        remote("w-ignore", "SKU-IGNORE", "gone", lifecycle = RemoteRecordLifecycle.DELETED),
-                        remote("w-import", "SKU-IMPORT", "import"),
-                        remote("w-update", "SKU-UPDATE", "new"),
-                        remote("w-delete", "SKU-DELETE", "old", lifecycle = RemoteRecordLifecycle.DELETED),
-                        remote("w-relink", "SKU-RELINK", "new"),
-                        remote("w-equal", "SKU-EQUAL", "same"),
-                        remote("w-restore", "SKU-RESTORE", "restored"),
-                    ),
+                locals = orderedDecisionLocals(),
+                remotes = orderedDecisionRemotes(),
                 context = context(),
             )
 
@@ -743,7 +738,7 @@ private fun hardRemoteIdPass(): MatchPass<Widget, RemoteWidget, WidgetId, Widget
         localKeys = { local ->
             local.registration.remoteId
                 ?.let { setOf(WidgetKey.Remote(it)) }
-                ?: emptySet()
+                .orEmpty()
         },
         remoteKeys = { remote -> setOf(WidgetKey.Remote(remote.externalId)) },
     )
@@ -756,7 +751,7 @@ private fun rememberedRemoteIdPass(): MatchPass<Widget, RemoteWidget, WidgetId, 
             if (local.registration.remoteId == null) {
                 local.registration.rememberedRemoteId
                     ?.let { setOf(WidgetKey.Remote(it)) }
-                    ?: emptySet()
+                    .orEmpty()
             } else {
                 emptySet()
             }
@@ -791,28 +786,66 @@ private fun activeIdWithUnlinkedLifecycle(
                     .copy(lifecycle = SyncRegistrationLifecycle.UNLINKED),
         )
 
+private fun orderedDecisionLocals(): List<Widget> =
+    listOf(
+        Widget.linked("local-update", id("w-update"), "SKU-UPDATE", "old"),
+        Widget.linked("local-delete", id("w-delete"), "SKU-DELETE", "old"),
+        Widget.neverLinked("local-relink", "SKU-RELINK", "old"),
+        Widget.linked("local-equal", id("w-equal"), "SKU-EQUAL", "same"),
+        Widget.remotelyDeleted("local-restore", id("w-restore"), "SKU-RESTORE", "old"),
+        Widget.neverLinked("local-unlink", "SKU-MISSING-UNLINK", "missing"),
+        Widget.neverLinked("local-retry", "SKU-MISSING-RETRY", "missing"),
+        Widget.neverLinked("local-conflict", "SKU-MISSING-CONFLICT", "missing"),
+    )
+
+private fun orderedDecisionRemotes(): List<RemoteWidget> =
+    listOf(
+        remote(
+            "w-ignore",
+            "SKU-IGNORE",
+            "gone",
+            RemoteWidgetOptions(lifecycle = RemoteRecordLifecycle.DELETED),
+        ),
+        remote("w-import", "SKU-IMPORT", "import"),
+        remote("w-update", "SKU-UPDATE", "new"),
+        remote(
+            "w-delete",
+            "SKU-DELETE",
+            "old",
+            RemoteWidgetOptions(lifecycle = RemoteRecordLifecycle.DELETED),
+        ),
+        remote("w-relink", "SKU-RELINK", "new"),
+        remote("w-equal", "SKU-EQUAL", "same"),
+        remote("w-restore", "SKU-RESTORE", "restored"),
+    )
+
 private fun id(value: String): WidgetId = WidgetId(value)
 
 private fun remote(
     id: String,
     sku: String,
     name: String,
-    lifecycle: RemoteRecordLifecycle = RemoteRecordLifecycle.ACTIVE,
-    importable: Boolean = true,
-    version: VersionStamp? = null,
-    observedAt: Instant? = null,
+    options: RemoteWidgetOptions = RemoteWidgetOptions(),
 ): RemoteWidget =
     RemoteWidget(
         id = WidgetId(id),
         sku = sku,
         name = name,
-        lifecycle = lifecycle,
-        importable = importable,
-        version = version,
-        observedAt = observedAt,
+        lifecycle = options.lifecycle,
+        importable = options.importable,
+        version = options.version,
+        observedAt = options.observedAt,
     )
 
-private fun context(): SyncContext<WidgetScope> = SyncFixtures.context(startedAt = observedAt)
+private data class RemoteWidgetOptions(
+    val lifecycle: RemoteRecordLifecycle = RemoteRecordLifecycle.ACTIVE,
+    val importable: Boolean = true,
+    val version: VersionStamp? = null,
+    val observedAt: Instant? = null,
+)
+
+private fun context(): SyncContext<WidgetScope> =
+    SyncFixtures.context(options = SyncContextFixtureOptions(startedAt = observedAt))
 
 private fun deleteSignal(decision: ReconciliationDecision): RemoteDeleteSignal<WidgetId> =
     when (decision) {

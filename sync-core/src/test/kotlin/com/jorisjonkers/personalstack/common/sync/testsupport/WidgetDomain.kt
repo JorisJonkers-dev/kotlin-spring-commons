@@ -98,23 +98,30 @@ data class Widget(
             remoteId: WidgetId,
             sku: String,
             name: String,
-            scope: WidgetScope = WidgetScope("default"),
-            at: Instant = Instant.EPOCH,
+            metadata: WidgetLinkMetadata = WidgetLinkMetadata(),
         ): Widget =
             Widget(
                 localId = LocalId(localId),
                 sku = sku,
                 name = name,
-                scope = scope,
+                scope = metadata.scope,
                 registration =
                     SyncRegistration(
                         remoteId = remoteId,
                         rememberedRemoteId = remoteId,
                         lifecycle = SyncRegistrationLifecycle.LINKED,
-                        changedAt = at,
+                        changedAt = metadata.at,
                         version = null,
                     ),
             )
+
+        fun linked(
+            localId: String,
+            remoteId: WidgetId,
+            sku: String,
+            name: String,
+            scope: WidgetScope,
+        ): Widget = linked(localId, remoteId, sku, name, WidgetLinkMetadata(scope = scope))
 
         /** A soft-deleted widget that still remembers [remoteId] (so Restore is reachable). */
         fun remotelyDeleted(
@@ -122,26 +129,38 @@ data class Widget(
             remoteId: WidgetId,
             sku: String,
             name: String,
-            scope: WidgetScope = WidgetScope("default"),
-            at: Instant = Instant.EPOCH,
+            metadata: WidgetLinkMetadata = WidgetLinkMetadata(),
         ): Widget =
             Widget(
                 localId = LocalId(localId),
                 sku = sku,
                 name = name,
-                scope = scope,
+                scope = metadata.scope,
                 deleted = true,
                 registration =
                     SyncRegistration(
                         remoteId = null,
                         rememberedRemoteId = remoteId,
                         lifecycle = SyncRegistrationLifecycle.REMOTELY_DELETED,
-                        changedAt = at,
+                        changedAt = metadata.at,
                         version = null,
                     ),
             )
+
+        fun remotelyDeleted(
+            localId: String,
+            remoteId: WidgetId,
+            sku: String,
+            name: String,
+            scope: WidgetScope,
+        ): Widget = remotelyDeleted(localId, remoteId, sku, name, WidgetLinkMetadata(scope = scope))
     }
 }
+
+data class WidgetLinkMetadata(
+    val scope: WidgetScope = WidgetScope("default"),
+    val at: Instant = Instant.EPOCH,
+)
 
 /** The remote DTO (R). */
 data class RemoteWidget(

@@ -61,7 +61,16 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         val report =
             fetchPage(command, context, startedAt, fromCursor, pageSize).let { read ->
                 read.failureReport
-                    ?: executePage(command, context, startedAt, pageSize, checkpoint, requireNotNull(read.pageView))
+                    ?: executePage(
+                        SpawnPageOperation(
+                            command = command,
+                            context = context,
+                            startedAt = startedAt,
+                            pageSize = pageSize,
+                            checkpoint = checkpoint,
+                            pageView = requireNotNull(read.pageView),
+                        ),
+                    )
             }
         return report
     }
@@ -100,22 +109,27 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
                 )
         }
 
-    private fun executePage(
-        command: SpawnSyncCommand<SCOPE>,
-        context: SyncContext<SCOPE>,
-        startedAt: Instant,
-        pageSize: Int,
-        checkpoint: CursorCheckpoint?,
-        pageView: PageView<R, RID, KEY>,
-    ): SyncReport {
-        val effects = enqueueEffects(pageView.page)
-        if (command.fullSync) {
-            appendUnseenLocalEffects(command, context, pageSize, pageView.page, effects)
+    private fun executePage(operation: SpawnPageOperation<R, RID, KEY, SCOPE>): SyncReport {
+        val effects = enqueueEffects(operation.pageView.page)
+        if (operation.command.fullSync) {
+            appendUnseenLocalEffects(
+                operation.command,
+                operation.context,
+                operation.pageSize,
+                operation.pageView.page,
+                effects,
+            )
         }
-        return if (command.dryRun) {
-            reporter.finishDryRun(context, command, startedAt, effects.size, pageView)
+        return if (operation.command.dryRun) {
+            reporter.finishDryRun(
+                operation.context,
+                operation.command,
+                operation.startedAt,
+                effects.size,
+                operation.pageView,
+            )
         } else {
-            persistPage(context, command, startedAt, checkpoint, pageView, effects)
+            persistPage(operation, effects)
         }
     }
 
@@ -161,31 +175,28 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
         }
 
     private fun persistPage(
-        context: SyncContext<SCOPE>,
-        command: SpawnSyncCommand<SCOPE>,
-        startedAt: Instant,
-        checkpoint: CursorCheckpoint?,
-        pageView: PageView<R, RID, KEY>,
+        operation: SpawnPageOperation<R, RID, KEY, SCOPE>,
         effects: List<SyncEffect>,
     ): SyncReport {
         val nextCheckpoint =
             CursorCheckpoint(
                 syncName = syncName,
-                scope = command.scope,
-                cursor = pageView.page.nextCursor,
-                highWatermark = pageView.page.highWatermark ?: checkpoint?.highWatermark,
+                scope = operation.command.scope,
+                cursor = operation.pageView.page.nextCursor,
+                highWatermark = operation.pageView.page.highWatermark ?: operation.checkpoint?.highWatermark,
                 updatedAt = Instant.now(clock),
-                runId = context.runId,
+                runId = operation.context.runId,
             )
-        val lockKey = SyncLockKey("${syncName.value}:spawn:${command.scope}")
+        val lockKey = SyncLockKey("${syncName.value}:spawn:${operation.command.scope}")
         val lockResult =
             ports.lockManager.withLock(lockKey, definition.execution.lockTimeout) {
-                runTransaction(context, command, startedAt, checkpoint, nextCheckpoint, pageView, effects)
+                runTransaction(SpawnTransaction(operation, nextCheckpoint, effects))
             }
         val txResult =
             when (lockResult) {
                 is LockResult.Acquired -> lockResult.value
-                is LockResult.NotAcquired -> SpawnTxResult(reporter.lockUnavailableOutcome(context, startedAt, lockKey))
+                is LockResult.NotAcquired ->
+                    SpawnTxResult(reporter.lockUnavailableOutcome(operation.context, operation.startedAt, lockKey))
             }
         val requeue =
             when {
@@ -194,43 +205,38 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
                         definition.execution.lockTimeout,
                         "spawn could not progress",
                     )
-                else -> reporter.requeueFor(pageView)
+                else -> reporter.requeueFor(operation.pageView)
             }
-        val report = reporter.report(context, startedAt, listOf(txResult.outcome), requeue)
+        val report = reporter.report(operation.context, operation.startedAt, listOf(txResult.outcome), requeue)
         ports.observer.onRunCompleted(report)
         ports.auditTrail.recordRunCompleted(report)
         return report
     }
 
-    private fun runTransaction(
-        context: SyncContext<SCOPE>,
-        command: SpawnSyncCommand<SCOPE>,
-        startedAt: Instant,
-        checkpoint: CursorCheckpoint?,
-        nextCheckpoint: CursorCheckpoint,
-        pageView: PageView<R, RID, KEY>,
-        effects: List<SyncEffect>,
-    ): SpawnTxResult<RID> =
+    private fun runTransaction(transaction: SpawnTransaction<R, RID, KEY, SCOPE>): SpawnTxResult<RID> =
         ports.unitOfWork.transaction {
-            if (effects.isNotEmpty()) {
-                ports.effectOutbox.append(context, effects)
+            val operation = transaction.operation
+            if (transaction.effects.isNotEmpty()) {
+                ports.effectOutbox.append(operation.context, transaction.effects)
             }
             val advanced =
-                pageView.partialFailure == null &&
-                    ports.checkpointStore.saveCursorIfCurrent(checkpoint, nextCheckpoint)
+                operation.pageView.partialFailure == null &&
+                    ports.checkpointStore.saveCursorIfCurrent(operation.checkpoint, transaction.nextCheckpoint)
             val outcome =
                 reporter.spawnOutcome(
-                    context,
-                    command,
-                    effects.size,
-                    startedAt,
-                    executed = true,
-                    advanced = advanced,
+                    SpawnOutcomeInput(
+                        context = operation.context,
+                        command = operation.command,
+                        enqueued = transaction.effects.size,
+                        startedAt = operation.startedAt,
+                        executed = true,
+                        advanced = advanced,
+                    ),
                 )
-            ports.auditTrail.recordOutcome(context, outcome)
-            ports.observer.onOutcome(context, outcome)
-            if (effects.isNotEmpty()) {
-                afterCommit { ports.effectOutbox.requestRelay(context) }
+            ports.auditTrail.recordOutcome(operation.context, outcome)
+            ports.observer.onOutcome(operation.context, outcome)
+            if (transaction.effects.isNotEmpty()) {
+                afterCommit { ports.effectOutbox.requestRelay(operation.context) }
             }
             SpawnTxResult(outcome, advanced)
         }
@@ -243,7 +249,16 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
             enqueued: Int,
             pageView: PageView<R, RID, KEY>,
         ): SyncReport {
-            val outcome = spawnOutcome(context, command, enqueued, startedAt, executed = false)
+            val outcome =
+                spawnOutcome(
+                    SpawnOutcomeInput(
+                        context = context,
+                        command = command,
+                        enqueued = enqueued,
+                        startedAt = startedAt,
+                        executed = false,
+                    ),
+                )
             ports.observer.onOutcome(context, outcome)
             val report = report(context, startedAt, listOf(outcome), requeueFor(pageView))
             ports.observer.onRunCompleted(report)
@@ -348,22 +363,15 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
                 requeue = requeue,
             )
 
-        fun spawnOutcome(
-            context: SyncContext<SCOPE>,
-            command: SpawnSyncCommand<SCOPE>,
-            enqueued: Int,
-            startedAt: Instant,
-            executed: Boolean,
-            advanced: Boolean = false,
-        ): SyncOutcome<RID> =
+        fun spawnOutcome(input: SpawnOutcomeInput<SCOPE>): SyncOutcome<RID> =
             SyncOutcome.Skipped(
-                subject = scopeSubject(context),
+                subject = scopeSubject(input.context),
                 action = com.jorisjonkers.personalstack.common.sync.domain.SyncAction.IGNORE,
-                duration = Duration.between(startedAt, Instant.now(clock)),
+                duration = Duration.between(input.startedAt, Instant.now(clock)),
                 reason =
                     com.jorisjonkers.personalstack.common.sync.domain.SyncReason.Policy(
-                        "spawn enqueued=$enqueued executed=$executed " +
-                            "cursorAdvanced=$advanced fullSync=${command.fullSync}",
+                        "spawn enqueued=${input.enqueued} executed=${input.executed} " +
+                            "cursorAdvanced=${input.advanced} fullSync=${input.command.fullSync}",
                     ),
             )
 
@@ -383,6 +391,30 @@ class SpawnSyncService<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private data class PageView<R : Any, RID : Any, KEY : Any>(
         val page: RemotePage<R, RID, KEY>,
         val partialFailure: SyncFailure?,
+    )
+
+    private data class SpawnPageOperation<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
+        val command: SpawnSyncCommand<SCOPE>,
+        val context: SyncContext<SCOPE>,
+        val startedAt: Instant,
+        val pageSize: Int,
+        val checkpoint: CursorCheckpoint?,
+        val pageView: PageView<R, RID, KEY>,
+    )
+
+    private data class SpawnTransaction<R : Any, RID : Any, KEY : Any, SCOPE : Any>(
+        val operation: SpawnPageOperation<R, RID, KEY, SCOPE>,
+        val nextCheckpoint: CursorCheckpoint,
+        val effects: List<SyncEffect>,
+    )
+
+    private data class SpawnOutcomeInput<SCOPE : Any>(
+        val context: SyncContext<SCOPE>,
+        val command: SpawnSyncCommand<SCOPE>,
+        val enqueued: Int,
+        val startedAt: Instant,
+        val executed: Boolean,
+        val advanced: Boolean = false,
     )
 
     private data class SpawnPageRead<R : Any, RID : Any, KEY : Any>(

@@ -129,7 +129,7 @@ class SyncResourceBuilder<A : Any, R : Any, RID : Any, KEY : Any, SCOPE : Any>(
     private fun <T> requireConfigured(
         value: T?,
         what: String,
-    ): T = value ?: throw IllegalStateException("syncResource(\"${name.value}\"): $what must be configured")
+    ): T = value ?: error("syncResource(\"${name.value}\"): $what must be configured")
 }
 
 /** Outbound port wiring for [SyncResourceBuilder]. */
@@ -220,7 +220,11 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
         pass(
             name = name,
             confidence = MatchConfidence.HARD,
-            localKeys = { local -> local.registration.remoteId?.let { setOf(keyOf(it)) } ?: emptySet() },
+            localKeys = { local ->
+                local.registration.remoteId
+                    ?.let { setOf(keyOf(it)) }
+                    .orEmpty()
+            },
             remoteKeys = { remote -> setOf(keyOf(remote.externalId)) },
         )
     }
@@ -233,7 +237,11 @@ class MatchingBuilder<A : Any, R : Any, RID : Any, KEY : Any> {
         pass(
             name = name,
             confidence = MatchConfidence.REMEMBERED_REMOTE_ID,
-            localKeys = { local -> local.registration.rememberedRemoteId?.let { setOf(keyOf(it)) } ?: emptySet() },
+            localKeys = { local ->
+                local.registration.rememberedRemoteId
+                    ?.let { setOf(keyOf(it)) }
+                    .orEmpty()
+            },
             remoteKeys = { remote -> setOf(keyOf(remote.externalId)) },
         )
     }
@@ -324,27 +332,27 @@ fun <KEY : Any> syncKeys(vararg keys: KEY?): Set<KEY> = keys.filterNotNull().toS
 fun <A : Any, RID : Any, KEY : Any> localRecord(
     aggregate: A,
     localId: LocalId?,
-    remoteId: RID?,
-    rememberedRemoteId: RID? = null,
-    remotelyDeletedAt: Instant? = null,
-    changedAt: Instant? = remotelyDeletedAt,
-    version: VersionStamp? = null,
-    lifecycle: SyncRegistrationLifecycle? = null,
+    registration: SyncRegistrationInference<RID>,
     keys: Iterable<KEY> = emptyList(),
 ): LocalRecord<A, RID, KEY> =
     LocalRecord(
         aggregate = aggregate,
         localId = localId,
-        registration =
-            SyncRegistration.inferred(
-                remoteId = remoteId,
-                rememberedRemoteId = rememberedRemoteId,
-                remotelyDeletedAt = remotelyDeletedAt,
-                changedAt = changedAt,
-                version = version,
-                lifecycle = lifecycle,
-            ),
+        registration = SyncRegistration.inferred(registration),
         keys = keys.toSet(),
+    )
+
+fun <A : Any, RID : Any, KEY : Any> localRecord(
+    aggregate: A,
+    localId: LocalId?,
+    remoteId: RID?,
+    keys: Iterable<KEY> = emptyList(),
+): LocalRecord<A, RID, KEY> =
+    localRecord(
+        aggregate = aggregate,
+        localId = localId,
+        registration = SyncRegistrationInference(remoteId = remoteId),
+        keys = keys,
     )
 
 /**
@@ -355,18 +363,29 @@ fun <A : Any, RID : Any, KEY : Any> localRecord(
 fun <R : Any, RID : Any, KEY : Any> remoteRecord(
     record: R,
     externalId: RID,
-    keys: Iterable<KEY> = emptyList(),
-    deleted: Boolean = false,
-    importable: Boolean = true,
-    version: VersionStamp? = null,
-    observedAt: Instant? = null,
+    metadata: RemoteRecordMetadata<KEY> = RemoteRecordMetadata(),
 ): RemoteRecord<R, RID, KEY> =
     RemoteRecord(
         record = record,
         externalId = externalId,
-        keys = keys.toSet(),
-        lifecycle = if (deleted) RemoteRecordLifecycle.DELETED else RemoteRecordLifecycle.ACTIVE,
-        importable = importable,
-        version = version,
-        observedAt = observedAt,
+        keys = metadata.keys.toSet(),
+        lifecycle = if (metadata.deleted) RemoteRecordLifecycle.DELETED else RemoteRecordLifecycle.ACTIVE,
+        importable = metadata.importable,
+        version = metadata.version,
+        observedAt = metadata.observedAt,
     )
+
+fun <R : Any, RID : Any, KEY : Any> remoteRecord(
+    record: R,
+    externalId: RID,
+    keys: Iterable<KEY>,
+): RemoteRecord<R, RID, KEY> =
+    remoteRecord(record = record, externalId = externalId, metadata = RemoteRecordMetadata(keys = keys))
+
+data class RemoteRecordMetadata<KEY : Any>(
+    val keys: Iterable<KEY> = emptyList(),
+    val deleted: Boolean = false,
+    val importable: Boolean = true,
+    val version: VersionStamp? = null,
+    val observedAt: Instant? = null,
+)
