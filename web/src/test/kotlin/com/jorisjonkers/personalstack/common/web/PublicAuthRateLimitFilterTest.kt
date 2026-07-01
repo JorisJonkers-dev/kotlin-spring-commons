@@ -46,8 +46,11 @@ class PublicAuthRateLimitFilterTest {
                     "POST",
                     "/auth/login",
                     chainCalls,
-                    remoteAddr = "198.51.100.10",
-                    headers = mapOf("X-Forwarded-For" to "203.0.113.$it"),
+                    metadata =
+                        RequestMetadata(
+                            remoteAddr = "198.51.100.10",
+                            headers = mapOf("X-Forwarded-For" to "203.0.113.$it"),
+                        ),
                 ).status,
             ).isEqualTo(200)
         }
@@ -57,8 +60,11 @@ class PublicAuthRateLimitFilterTest {
                 "POST",
                 "/auth/login",
                 chainCalls,
-                remoteAddr = "198.51.100.10",
-                headers = mapOf("X-Forwarded-For" to "203.0.113.99"),
+                metadata =
+                    RequestMetadata(
+                        remoteAddr = "198.51.100.10",
+                        headers = mapOf("X-Forwarded-For" to "203.0.113.99"),
+                    ),
             ).status,
         ).isEqualTo(429)
     }
@@ -112,18 +118,22 @@ class PublicAuthRateLimitFilterTest {
         method: String,
         path: String,
         chainCalls: AtomicInteger,
-        remoteAddr: String = "127.0.0.1",
-        headers: Map<String, String> = emptyMap(),
+        metadata: RequestMetadata = RequestMetadata(),
     ): MockHttpServletResponse {
         val request =
             MockHttpServletRequest(method, path).apply {
                 servletPath = path
-                this.remoteAddr = remoteAddr
-                headers.forEach { (name, value) -> addHeader(name, value) }
+                this.remoteAddr = metadata.remoteAddr
+                metadata.headers.forEach { (name, value) -> addHeader(name, value) }
             }
         val response = MockHttpServletResponse()
         val chain = FilterChain { _, _ -> chainCalls.incrementAndGet() }
         filter.doFilter(request, response, chain)
         return response
     }
+
+    private data class RequestMetadata(
+        val remoteAddr: String = "127.0.0.1",
+        val headers: Map<String, String> = emptyMap(),
+    )
 }

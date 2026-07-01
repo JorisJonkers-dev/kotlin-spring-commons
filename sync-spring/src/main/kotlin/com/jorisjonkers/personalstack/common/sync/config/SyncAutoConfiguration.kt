@@ -161,7 +161,7 @@ class SyncAutoConfiguration {
             ttl: Duration,
             context: SyncContext<*>,
         ): IdempotencyClaim =
-            throw IllegalStateException(
+            error(
                 "Idempotency is REQUIRED_FOR_EXTERNAL_TRIGGERS but no IdempotencyStore bean is configured. " +
                     "Provide a real IdempotencyStore, or set ${SyncProperties.PREFIX}.idempotency=disabled.",
             )
@@ -208,7 +208,7 @@ class SyncAutoConfiguration {
         ) = unsupported()
 
         private fun unsupported(): Nothing =
-            throw IllegalStateException(
+            error(
                 "No SyncCheckpointStore bean is configured. Spawn/backfill and MULTI_WRITER sync modes " +
                     "require a real SyncCheckpointStore.",
             )

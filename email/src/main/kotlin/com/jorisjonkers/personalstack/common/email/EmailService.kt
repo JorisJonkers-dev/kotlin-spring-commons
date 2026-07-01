@@ -75,7 +75,7 @@ open class EmailService(
         if (request.htmlBody != null) {
             helper.setText(request.textBody ?: stripHtml(request.htmlBody), request.htmlBody)
         } else {
-            helper.setText(request.textBody ?: "")
+            helper.setText(request.textBody.orEmpty())
         }
 
         request.replyTo?.let { helper.setReplyTo(it) }

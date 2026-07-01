@@ -22,7 +22,7 @@ class StackSmokeSuite(
             failures.joinToString(separator = "\n") {
                 "${it.service} ${it.uri} returned ${it.statusCode ?: "no response"}${it.error?.let { error ->
                     ": $error"
-                } ?: ""}"
+                }.orEmpty()}"
             }
         }
         return StackSmokeResult(results)

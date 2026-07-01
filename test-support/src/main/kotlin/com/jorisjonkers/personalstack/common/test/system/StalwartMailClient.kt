@@ -105,10 +105,10 @@ class StalwartMailClient(
         val body =
             when (val content = content) {
                 is String -> content
-                is MimeMultipart -> extractText(content) ?: ""
+                is MimeMultipart -> extractText(content).orEmpty()
                 else -> content?.toString().orEmpty()
             }
-        return DeliveredEmail(subject = subject ?: "", recipients = to, body = body)
+        return DeliveredEmail(subject = subject.orEmpty(), recipients = to, body = body)
     }
 
     private fun extractText(multipart: MimeMultipart): String? =

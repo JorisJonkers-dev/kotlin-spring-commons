@@ -111,8 +111,8 @@ class RequestPipelineSpanFilter(
             request.getAttribute(HANDLER_MAPPING_BEST_MATCHING_PATTERN_ATTRIBUTE) as? String
                 ?: request.requestURI
         return buildMap(MAX_ATTRS) {
-            put("http.method", request.method ?: "")
-            put("http.route", route ?: "")
+            put("http.method", request.method.orEmpty())
+            put("http.route", route.orEmpty())
             put("http.status_code", response.status.toLong())
         }
     }

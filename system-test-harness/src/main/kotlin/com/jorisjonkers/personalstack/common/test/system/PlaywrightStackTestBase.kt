@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 
 @ExtendWith(StackShardCondition::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-abstract class PlaywrightStackTestBase {
+open class PlaywrightStackTestBase {
     protected open val target: StackTarget = StackTarget.fromEnvironment()
     protected open val browserOptions: BrowserType.LaunchOptions =
         BrowserType.LaunchOptions().setHeadless(true)
@@ -100,6 +100,7 @@ abstract class PlaywrightStackTestBase {
                 }
             }
         }
-        throw lastException ?: IllegalStateException("navigation failed without an exception")
+        val failure = lastException ?: error("navigation failed without an exception")
+        throw failure
     }
 }
