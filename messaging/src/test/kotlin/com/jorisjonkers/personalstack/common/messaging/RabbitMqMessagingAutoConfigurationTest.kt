@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION")
-
 package com.jorisjonkers.personalstack.common.messaging
 
 import io.mockk.mockk
@@ -11,7 +9,7 @@ import org.springframework.amqp.core.Declarables
 import org.springframework.amqp.core.DirectExchange
 import org.springframework.amqp.core.Queue
 import org.springframework.amqp.rabbit.core.RabbitTemplate
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter
 import org.springframework.amqp.support.converter.MessageConverter
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
@@ -33,7 +31,7 @@ class RabbitMqMessagingAutoConfigurationTest {
             assertThat(context).hasSingleBean(RabbitMqEventPublisher::class.java)
             assertThat(context).hasSingleBean(MessageConverter::class.java)
             assertThat(context.getBean(MessageConverter::class.java))
-                .isInstanceOf(Jackson2JsonMessageConverter::class.java)
+                .isInstanceOf(JacksonJsonMessageConverter::class.java)
 
             val eventsExchange = context.getBean("rabbitMqEventsExchange", DirectExchange::class.java)
             val deadLetterExchange = context.getBean("rabbitMqDeadLetterExchange", DirectExchange::class.java)

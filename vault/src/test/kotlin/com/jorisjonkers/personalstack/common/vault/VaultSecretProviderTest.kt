@@ -8,6 +8,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.vault.core.VaultTemplate
 import org.springframework.vault.support.VaultResponse
+import java.util.Collections
 
 class VaultSecretProviderTest {
     private val vaultTemplate = mockk<VaultTemplate>()
@@ -62,10 +63,8 @@ class VaultSecretProviderTest {
     @Test
     fun `getSecret throws when key value is null`() {
         val response = mockk<VaultResponse>()
-        val data = hashMapOf<String, Any?>("password" to null)
         every { vaultTemplate.read("secret/data/myapp") } returns response
-        @Suppress("UNCHECKED_CAST")
-        every { response.data } returns data as Map<String, Any>
+        every { response.data } returns Collections.singletonMap("password", null)
 
         assertThatThrownBy {
             provider.getSecret("secret/data/myapp", "password")

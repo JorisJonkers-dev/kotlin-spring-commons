@@ -390,25 +390,36 @@ class GlobalExceptionHandlerTest {
      * uses structural typing (`getServerErrorMessage`-shaped duck) so
      * this fake is sufficient and the test stays driver-free.
      */
-    @Suppress("unused", "MemberVisibilityCanBePrivate")
     private class FakePsqlException(
         message: String? = "fake psql exception",
         private val serverErrorMessage: FakeServerErrorMessage? = null,
         private val sqlState: String? = null,
-    ) : RuntimeException(message) {
-        fun getServerErrorMessage(): FakeServerErrorMessage? = serverErrorMessage
+    ) : RuntimeException(message),
+        PsqlErrorShape {
+        override fun getServerErrorMessage(): FakeServerErrorMessage? = serverErrorMessage
 
-        fun getSQLState(): String? = sqlState
+        override fun getSQLState(): String? = sqlState
     }
 
-    @Suppress("unused", "MemberVisibilityCanBePrivate")
     private class FakeServerErrorMessage(
         private val constraint: String? = null,
         private val detail: String? = null,
-    ) {
-        fun getConstraint(): String? = constraint
+    ) : ServerErrorMessageShape {
+        override fun getConstraint(): String? = constraint
 
-        fun getDetail(): String? = detail
+        override fun getDetail(): String? = detail
+    }
+
+    private interface PsqlErrorShape {
+        fun getServerErrorMessage(): FakeServerErrorMessage?
+
+        fun getSQLState(): String?
+    }
+
+    private interface ServerErrorMessageShape {
+        fun getConstraint(): String?
+
+        fun getDetail(): String?
     }
 
     @Test
@@ -449,6 +460,38 @@ class GlobalExceptionHandlerTest {
         assertThat(pd.exception).isEqualTo("java.lang.Foo")
         assertThat(pd.kubernetesCode).isEqualTo(403)
         assertThat(pd.kubernetesReason).isEqualTo("Forbidden")
+    }
+
+    @Test
+    fun `problem helper maps extension groups into problem detail fields`() {
+        val body =
+            ExposedProblemDetailSupport().exposedProblem(
+                ProblemDetailSpec(
+                    type = URI.create("urn:problem-type:downstream"),
+                    title = "Downstream",
+                    status = HttpStatus.BAD_GATEWAY,
+                    detail = "Kubernetes rejected the request",
+                    request = webRequest("/api/v1/downstream"),
+                    extensions =
+                        ProblemDetailExtensions(
+                            errors = listOf(FieldError("name", "Invalid", "bad")),
+                            traceId = "trace-456",
+                            exception = "io.fabric8.KubernetesClientException",
+                            kubernetes = KubernetesProblemExtension(403, "Forbidden"),
+                            database = DatabaseProblemExtension("constraint_name", "name", "widgets"),
+                        ),
+                ),
+            )
+
+        assertThat(body.instance).isEqualTo(URI.create("/api/v1/downstream"))
+        assertThat(body.errors).containsExactly(FieldError("name", "Invalid", "bad"))
+        assertThat(body.traceId).isEqualTo("trace-456")
+        assertThat(body.exception).isEqualTo("io.fabric8.KubernetesClientException")
+        assertThat(body.kubernetesCode).isEqualTo(403)
+        assertThat(body.kubernetesReason).isEqualTo("Forbidden")
+        assertThat(body.constraint).isEqualTo("constraint_name")
+        assertThat(body.column).isEqualTo("name")
+        assertThat(body.referencedTable).isEqualTo("widgets")
     }
 
     @Test
@@ -494,5 +537,9 @@ class GlobalExceptionHandlerTest {
         val fe2 = fe.copy(message = "invalid", rejectedValue = "x")
         assertThat(fe2.message).isEqualTo("invalid")
         assertThat(fe2.rejectedValue).isEqualTo("x")
+    }
+
+    private class ExposedProblemDetailSupport : ProblemDetailSupport() {
+        fun exposedProblem(spec: ProblemDetailSpec): ProblemDetail = problem(spec)
     }
 }

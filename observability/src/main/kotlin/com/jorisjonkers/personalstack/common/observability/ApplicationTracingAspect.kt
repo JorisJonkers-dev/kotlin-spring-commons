@@ -43,9 +43,6 @@ class ApplicationTracingAspectAutoConfiguration {
 class ApplicationTracingAspect(
     private val tracer: Tracer,
 ) {
-    // Catching Throwable is correct for an AOP @Around — the wrapped
-    // call can throw anything and the span must record + re-throw it.
-    @Suppress("TooGenericExceptionCaught")
     @Around(POINTCUT)
     fun trace(pjp: ProceedingJoinPoint): Any? {
         val sig = pjp.signature as? MethodSignature
@@ -58,15 +55,15 @@ class ApplicationTracingAspect(
         if (argsRepr.isNotEmpty()) {
             span.setAttribute("code.args", argsRepr)
         }
-        return try {
-            span.makeCurrent().use { pjp.proceed() }
-        } catch (t: Throwable) {
-            span.recordException(t)
-            span.setStatus(StatusCode.ERROR, t.message ?: t.javaClass.simpleName)
-            throw t
-        } finally {
-            span.end()
-        }
+        val result =
+            runCatching {
+                span.makeCurrent().use { pjp.proceed() }
+            }.onFailure { throwable ->
+                span.recordException(throwable)
+                span.setStatus(StatusCode.ERROR, throwable.message ?: throwable.javaClass.simpleName)
+            }
+        span.end()
+        return result.getOrThrow()
     }
 
     // Render call arguments for the span name + the `code.args`
