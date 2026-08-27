@@ -48,13 +48,28 @@ open class WebUtilitiesAutoConfiguration {
             trustedProxyCidrs = properties.rateLimit.trustedProxyCidrs,
         )
 
+    /**
+     * On by default: a service that depends on this module inherits a spec
+     * that documents the errors it already returns, rather than having to
+     * discover a property to switch it on. Opt out with
+     * `extratoast.web.problem-details.open-api-schemas-enabled=false`.
+     */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = ["org.springdoc.core.customizers.OpenApiCustomizer"])
-    @ConditionalOnProperty("extratoast.web.problem-details.open-api-schemas-enabled", havingValue = "true")
+    @ConditionalOnProperty(
+        "extratoast.web.problem-details.open-api-schemas-enabled",
+        havingValue = "true",
+        matchIfMissing = true,
+    )
     open class OpenApiErrorSchemasConfiguration {
         @Bean
         @ConditionalOnMissingBean
         open fun openApiErrorSchemas(properties: WebUtilitiesProperties): OpenApiErrorSchemas =
             OpenApiErrorSchemas(properties.problemDetails)
+
+        @Bean
+        @ConditionalOnMissingBean
+        open fun openApiProblemResponses(properties: WebUtilitiesProperties): OpenApiProblemResponses =
+            OpenApiProblemResponses(properties.problemDetails)
     }
 }

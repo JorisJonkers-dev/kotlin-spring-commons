@@ -7,6 +7,12 @@ private const val DEFAULT_RATE_LIMIT_MAX_BUCKETS = 10_000
 private const val DEFAULT_RATE_LIMIT_BUCKET_IDLE_TTL_MINUTES = 30L
 private const val DEFAULT_RATE_LIMIT_CLEANUP_INTERVAL = 128
 
+private const val STATUS_BAD_REQUEST = 400
+private const val STATUS_UNAUTHORIZED = 401
+private const val STATUS_FORBIDDEN = 403
+private const val STATUS_UNPROCESSABLE_ENTITY = 422
+private const val STATUS_INTERNAL_SERVER_ERROR = 500
+
 @ConfigurationProperties("extratoast.web")
 data class WebUtilitiesProperties(
     val problemDetails: ProblemDetailsProperties = ProblemDetailsProperties(),
@@ -17,9 +23,29 @@ data class WebUtilitiesProperties(
         val validationEnabled: Boolean = false,
         val validationStatus: Int = 400,
         val validationDetail: String = "Validation failed for request.",
-        val openApiSchemasEnabled: Boolean = false,
-        val apiErrorSchemaName: String = "ApiError",
-        val fieldErrorSchemaName: String = "FieldValidationError",
+        val openApiSchemasEnabled: Boolean = true,
+        val apiErrorSchemaName: String = "ProblemDetail",
+        val fieldErrorSchemaName: String = "FieldError",
+        /**
+         * Statuses attached to every operation. These are the failures any
+         * request can meet regardless of shape: rejected or insufficient
+         * credentials, and the catch-all server error. Security-derived
+         * statuses are included by default because every service in the
+         * estate sits behind authentication; a service that genuinely
+         * exposes anonymous endpoints narrows this list rather than
+         * annotating each operation.
+         */
+        val openApiUniversalErrorStatuses: List<Int> =
+            listOf(STATUS_UNAUTHORIZED, STATUS_FORBIDDEN, STATUS_INTERNAL_SERVER_ERROR),
+        /**
+         * Statuses attached only to operations that accept a request body,
+         * where a malformed or invalid payload is reachable. Declaring
+         * these on a bodyless GET would over-promise, which costs more than
+         * it buys: it makes conformance checking unable to catch a missing
+         * handler.
+         */
+        val openApiRequestBodyErrorStatuses: List<Int> =
+            listOf(STATUS_BAD_REQUEST, STATUS_UNPROCESSABLE_ENTITY),
     )
 
     data class CsrfProperties(

@@ -34,6 +34,9 @@ dependencies {
     testImplementation(libs.springdoc.openapi.starter.webmvc.api)
     testImplementation(libs.spring.test)
     testImplementation(libs.spring.tx)
+    // Boots a fixture application through springdoc so the OpenAPI customizers are asserted
+    // against a spec springdoc actually generates, not against a hand-built OpenAPI object.
+    testImplementation(project(":test-support"))
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

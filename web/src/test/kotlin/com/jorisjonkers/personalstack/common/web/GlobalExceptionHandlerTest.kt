@@ -685,4 +685,23 @@ class GlobalExceptionHandlerTest {
     private class ExposedProblemDetailSupport : ProblemDetailSupport() {
         fun exposedProblem(spec: ProblemDetailSpec): ProblemDetail = problem(spec)
     }
+
+    @Test
+    fun `every problem response is served as the RFC 9457 media type`() {
+        val request = webRequest()
+
+        val responses =
+            listOf(
+                handler.handleNotFound(NotFoundException("Workspace", "w-1"), request),
+                handler.handleDomain(DomainException("bad", "BAD_REQUEST"), request),
+                handler.handleIllegalState(IllegalStateException("conflict"), request),
+                handler.handleUnexpected(RuntimeException("boom"), request),
+            )
+
+        assertThat(responses)
+            .allSatisfy { response ->
+                assertThat(response.headers.contentType)
+                    .isEqualTo(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON)
+            }
+    }
 }

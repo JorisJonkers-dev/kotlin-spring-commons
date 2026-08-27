@@ -10,6 +10,7 @@ import org.springframework.core.annotation.Order
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.HttpMediaTypeNotSupportedException
@@ -98,7 +99,7 @@ open class NotFoundExceptionHandlers : ProblemDetailSupport() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
+        return problemResponse(HttpStatus.NOT_FOUND, body)
     }
 
     @ExceptionHandler(NoSuchElementException::class)
@@ -117,7 +118,7 @@ open class NotFoundExceptionHandlers : ProblemDetailSupport() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
+        return problemResponse(HttpStatus.NOT_FOUND, body)
     }
 
     @ExceptionHandler(EmptyResultDataAccessException::class)
@@ -136,7 +137,7 @@ open class NotFoundExceptionHandlers : ProblemDetailSupport() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
+        return problemResponse(HttpStatus.NOT_FOUND, body)
     }
 }
 
@@ -161,7 +162,7 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
+        return problemResponse(HttpStatus.BAD_REQUEST, body)
     }
 
     @ExceptionHandler(IllegalArgumentException::class)
@@ -180,7 +181,7 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
+        return problemResponse(HttpStatus.BAD_REQUEST, body)
     }
 
     @ExceptionHandler(IllegalStateException::class)
@@ -209,7 +210,7 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
                     extensions = ProblemDetailExtensions(traceId = traceId),
                 ),
             )
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body)
+        return problemResponse(HttpStatus.CONFLICT, body)
     }
 }
 
@@ -239,7 +240,7 @@ open class ValidationExceptionHandlers : DomainExceptionHandlers() {
                     extensions = ProblemDetailExtensions(errors = fieldErrors),
                 ),
             )
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+        return problemResponse(HttpStatus.UNPROCESSABLE_ENTITY, body)
     }
 
     @ExceptionHandler(HandlerMethodValidationException::class)
@@ -264,7 +265,7 @@ open class ValidationExceptionHandlers : DomainExceptionHandlers() {
                     extensions = ProblemDetailExtensions(errors = fieldErrors),
                 ),
             )
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+        return problemResponse(HttpStatus.UNPROCESSABLE_ENTITY, body)
     }
 
     @ExceptionHandler(ConstraintViolationException::class)
@@ -292,7 +293,7 @@ open class ValidationExceptionHandlers : DomainExceptionHandlers() {
                     extensions = ProblemDetailExtensions(errors = fieldErrors),
                 ),
             )
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+        return problemResponse(HttpStatus.UNPROCESSABLE_ENTITY, body)
     }
 }
 
@@ -313,7 +314,7 @@ open class RequestExceptionHandlers : DataExceptionHandlers() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(body)
+        return problemResponse(HttpStatus.UNSUPPORTED_MEDIA_TYPE, body)
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
@@ -332,7 +333,7 @@ open class RequestExceptionHandlers : DataExceptionHandlers() {
                     request = request,
                 ),
             )
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
+        return problemResponse(HttpStatus.BAD_REQUEST, body)
     }
 }
 
@@ -355,7 +356,7 @@ open class DataExceptionHandlers : ValidationExceptionHandlers() {
             info.postgresDetail,
         )
         val body = dataIntegrityProblem(request, info, traceId)
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+        return problemResponse(HttpStatus.UNPROCESSABLE_ENTITY, body)
     }
 
     private fun dataIntegrityProblem(
@@ -420,7 +421,7 @@ open class ServerExceptionHandlers : RequestExceptionHandlers() {
                     extensions = ProblemDetailExtensions(traceId = traceId),
                 ),
             )
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body)
+        return problemResponse(HttpStatus.INTERNAL_SERVER_ERROR, body)
     }
 
     /**
@@ -501,6 +502,26 @@ open class ProblemDetailSupport {
             column = spec.extensions.database?.column,
             referencedTable = spec.extensions.database?.referencedTable,
         )
+
+    /**
+     * Builds the response for a problem payload, stamping the RFC 9457
+     * media type.
+     *
+     * Without this the payload is an RFC 9457 document served as plain
+     * `application/json`, so the generated specs cannot honestly declare
+     * `application/problem+json` and contract conformance checking has
+     * nothing true to assert. Subclasses in downstream services should
+     * build their responses through here rather than calling
+     * `ResponseEntity.status(...)` directly.
+     */
+    protected fun problemResponse(
+        status: HttpStatus,
+        body: ProblemDetail,
+    ): ResponseEntity<ProblemDetail> =
+        ResponseEntity
+            .status(status)
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .body(body)
 
     protected fun currentTraceId(): String? = MDC.get("traceId") ?: MDC.get("trace_id")
 

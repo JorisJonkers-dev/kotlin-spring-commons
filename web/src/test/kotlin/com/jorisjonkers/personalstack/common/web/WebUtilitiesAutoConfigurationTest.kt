@@ -102,4 +102,58 @@ class WebUtilitiesAutoConfigurationTest {
 
         assertThat(openApi.components.schemas).containsKeys("Problem", "ProblemField")
     }
+
+    @Test
+    fun `registers both open api customizers by default without any property`() {
+        contextRunner.run { context ->
+            assertThat(context).hasNotFailed()
+            assertThat(context).hasSingleBean(OpenApiErrorSchemas::class.java)
+            assertThat(context).hasSingleBean(OpenApiProblemResponses::class.java)
+        }
+    }
+
+    @Test
+    fun `opting out removes both open api customizers`() {
+        contextRunner
+            .withPropertyValues("extratoast.web.problem-details.open-api-schemas-enabled=false")
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                assertThat(context).doesNotHaveBean(OpenApiErrorSchemas::class.java)
+                assertThat(context).doesNotHaveBean(OpenApiProblemResponses::class.java)
+            }
+    }
+
+    @Test
+    fun `nested open api factory creates a configured response customizer`() {
+        val customizer =
+            WebUtilitiesAutoConfiguration
+                .OpenApiErrorSchemasConfiguration()
+                .openApiProblemResponses(
+                    WebUtilitiesProperties(
+                        problemDetails =
+                            WebUtilitiesProperties.ProblemDetailsProperties(apiErrorSchemaName = "Problem"),
+                    ),
+                )
+        val openApi =
+            io.swagger.v3.oas.models.OpenAPI().paths(
+                io.swagger.v3.oas.models.Paths().apply {
+                    addPathItem(
+                        "/things",
+                        io.swagger.v3.oas.models
+                            .PathItem()
+                            .get(
+                                io.swagger.v3.oas.models
+                                    .Operation(),
+                            ),
+                    )
+                },
+            )
+
+        customizer.customise(openApi)
+
+        assertThat(
+            openApi.paths["/things"]!!
+                .get.responses.keys,
+        ).contains("401", "403", "500")
+    }
 }

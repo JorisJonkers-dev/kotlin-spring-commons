@@ -39,6 +39,44 @@ The current source keeps the existing
 | `vault` | `dev.jorisjonkers:kotlin-commons-vault` |
 | `web` | `dev.jorisjonkers:kotlin-commons-web` |
 
+## Problem Details & OpenAPI
+
+`web` serves RFC 9457 problem documents as `application/problem+json` and, by
+default, makes the generated OpenAPI spec say so. A service that depends on this
+module gets, with no configuration:
+
+- `ProblemDetail` and `FieldError` registered as schemas
+- `401`, `403` and `500` declared on every operation as `application/problem+json`
+- `400` and `422` additionally declared on operations that accept a request body
+
+A response the service declares itself always wins, so a hand-annotated `404` or
+`409` is never overwritten by the baseline. Statuses a service genuinely returns
+beyond this set still need their own `@ApiResponse`.
+
+Tune or opt out through `extratoast.web.problem-details`:
+
+```yaml
+extratoast:
+  web:
+    problem-details:
+      open-api-schemas-enabled: true          # false disables both customizers
+      api-error-schema-name: ProblemDetail
+      field-error-schema-name: FieldError
+      open-api-universal-error-statuses: [401, 403, 500]
+      open-api-request-body-error-statuses: [400, 422]
+```
+
+The universal list includes the security-derived statuses because every service
+in the estate sits behind authentication. A service exposing genuinely anonymous
+endpoints should narrow the list rather than over-promise: declaring a status an
+operation cannot return makes conformance checking unable to catch a missing
+handler.
+
+Downstream exception handlers that extend `ProblemDetailSupport` should build
+responses with `problemResponse(status, body)` rather than
+`ResponseEntity.status(...)`, so the media type stays consistent with what the
+spec advertises.
+
 ## System Test Harness
 
 `system-test-harness` contains reusable helpers for external system tests:

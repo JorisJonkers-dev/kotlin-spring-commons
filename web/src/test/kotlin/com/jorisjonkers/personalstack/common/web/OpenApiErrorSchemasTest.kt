@@ -6,12 +6,14 @@ import org.junit.jupiter.api.Test
 
 class OpenApiErrorSchemasTest {
     @Test
-    fun `registers default problem detail schemas`() {
+    fun `registers default problem detail schemas under the estate canonical names`() {
         val openApi = OpenAPI()
 
         OpenApiErrorSchemas().customise(openApi)
 
-        assertThat(openApi.components.schemas).containsKeys("ApiError", "FieldValidationError")
+        assertThat(openApi.components.schemas).containsKeys("ProblemDetail", "FieldError")
+        assertThat(openApi.components.schemas["ProblemDetail"]?.properties)
+            .containsKeys("type", "title", "status", "detail", "instance", "errors", "traceId")
     }
 
     @Test
