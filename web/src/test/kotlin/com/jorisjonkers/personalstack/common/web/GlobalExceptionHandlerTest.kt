@@ -2,6 +2,8 @@ package com.jorisjonkers.personalstack.common.web
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.jorisjonkers.personalstack.common.exception.DomainException
 import com.jorisjonkers.personalstack.common.exception.NotFoundException
 import io.mockk.every
@@ -30,6 +32,29 @@ class GlobalExceptionHandlerTest {
         mockk<WebRequest>().also {
             every { it.getDescription(false) } returns "uri=$path"
         }
+
+    /**
+     * Formatted lines at [level] emitted while [block] runs. The
+     * responses no longer carry the exception, so the log is the only
+     * place these assertions can look — and the only place Grafana
+     * looks.
+     */
+    private fun captureLogs(
+        level: Level = Level.ERROR,
+        block: () -> Unit,
+    ): List<String> {
+        val logger = LoggerFactory.getLogger(GlobalExceptionHandler::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        try {
+            block()
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+        return appender.list.filter { it.level == level }.map { it.formattedMessage }
+    }
 
     @Test
     fun `handleNotFound returns 404 with correct ProblemDetail`() {
@@ -140,7 +165,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `handleIllegalState returns 409 with the message`() {
+    fun `handleIllegalState returns 409 with a generic detail`() {
         val ex = IllegalStateException("Vault is not configured")
 
         val response = handler.handleIllegalState(ex, webRequest())
@@ -149,14 +174,42 @@ class GlobalExceptionHandlerTest {
         val body = response.body!!
         assertThat(body.status).isEqualTo(409)
         assertThat(body.title).isEqualTo("Conflict")
-        assertThat(body.detail).isEqualTo("Vault is not configured")
+        assertThat(body.detail).isEqualTo("That conflicts with the current state. Refresh and try again.")
     }
 
     @Test
-    fun `handleIllegalState falls back when message is null`() {
+    fun `handleIllegalState reveals nothing the error call put in the message`() {
+        // `error(…)` and `check(…)` throw IllegalStateException, so these
+        // messages name internals: bindings, handler classes, bare ids.
+        val ex = IllegalStateException("Missing extratoast.messaging binding 'user-registered'")
+
+        val body = handler.handleIllegalState(ex, webRequest()).body!!
+
+        assertThat(body.detail).doesNotContain("extratoast", "messaging", "user-registered")
+    }
+
+    @Test
+    fun `handleIllegalState carries a traceId and logs the message`() {
+        MDC.put("traceId", "conflict-trace")
+        try {
+            val ex = IllegalStateException("slug already in use: foo")
+            var body: ProblemDetail? = null
+            val logged = captureLogs(Level.WARN) { body = handler.handleIllegalState(ex, webRequest()).body }
+
+            assertThat(body!!.traceId).isEqualTo("conflict-trace")
+            assertThat(logged).singleElement().satisfies({
+                assertThat(it).contains("slug already in use: foo", "conflict-trace")
+            })
+        } finally {
+            MDC.clear()
+        }
+    }
+
+    @Test
+    fun `handleIllegalState is generic even when the message is null`() {
         val response = handler.handleIllegalState(IllegalStateException(), null)
 
-        assertThat(response.body!!.detail).isEqualTo("Request conflicts with current state")
+        assertThat(response.body!!.detail).isEqualTo("That conflicts with the current state. Refresh and try again.")
     }
 
     @Test
@@ -223,7 +276,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `handleUnexpected returns 500 with exception class and message in detail`() {
+    fun `handleUnexpected returns 500 with a generic detail`() {
         val ex = RuntimeException("boom")
 
         val response = handler.handleUnexpected(ex, webRequest("/api/v1/foo"))
@@ -232,39 +285,72 @@ class GlobalExceptionHandlerTest {
         val body = response.body!!
         assertThat(body.status).isEqualTo(500)
         assertThat(body.title).isEqualTo("Internal Server Error")
-        assertThat(body.detail).isEqualTo("RuntimeException: boom")
-        assertThat(body.exception).isEqualTo("java.lang.RuntimeException")
+        assertThat(body.detail).isEqualTo("Something went wrong on our side. Please try again.")
         assertThat(body.instance).isEqualTo(URI.create("/api/v1/foo"))
     }
 
     @Test
-    fun `handleUnexpected truncates long messages`() {
-        val longMessage = "x".repeat(600)
-        val response = handler.handleUnexpected(RuntimeException(longMessage), null)
+    fun `handleUnexpected reveals neither the exception class nor its message`() {
+        // Regression: a broker credential failure surfaced verbatim on the
+        // registration form, naming RabbitMQ and quoting its rejection.
+        val ex =
+            RuntimeException(
+                "com.rabbitmq.client.AuthenticationFailureException: ACCESS_REFUSED - " +
+                    "Login was refused using authentication mechanism PLAIN.",
+            )
 
-        val detail = response.body!!.detail!!
-        assertThat(detail).endsWith("…")
-        // "RuntimeException: " prefix (18) + 500 truncated chars + ellipsis
-        assertThat(detail.length).isLessThanOrEqualTo(550)
+        val body = handler.handleUnexpected(ex, webRequest("/api/v1/auth/register")).body!!
+
+        assertThat(body.exception).isNull()
+        assertThat(body.detail)
+            .doesNotContain("RuntimeException", "rabbitmq", "ACCESS_REFUSED", "PLAIN")
     }
 
     @Test
-    fun `handleUnexpected falls back to cause message when ex has none`() {
-        val cause = IllegalStateException("from-cause")
-        val ex = RuntimeException(null, cause)
+    fun `handleUnexpected logs the exception class and message for Grafana`() {
+        val logged = captureLogs { handler.handleUnexpected(RuntimeException("boom"), webRequest("/api/v1/foo")) }
 
-        val response = handler.handleUnexpected(ex, null)
-
-        assertThat(response.body!!.detail).contains("from-cause")
+        assertThat(logged).singleElement().satisfies({
+            assertThat(it).contains("java.lang.RuntimeException", "boom", "/api/v1/foo")
+        })
     }
 
     @Test
-    fun `handleUnexpected uses first non-blank line of multi-line message`() {
+    fun `logged summary truncates long messages`() {
+        val logged = captureLogs { handler.handleUnexpected(RuntimeException("x".repeat(600)), null) }
+
+        assertThat(logged).singleElement().satisfies({
+            assertThat(it).contains("x".repeat(500) + "…")
+            assertThat(it).doesNotContain("x".repeat(501))
+        })
+    }
+
+    @Test
+    fun `logged summary falls back to the cause message when the exception has none`() {
+        val ex = RuntimeException(null, IllegalStateException("from-cause"))
+
+        val logged = captureLogs { handler.handleUnexpected(ex, null) }
+
+        assertThat(logged).singleElement().satisfies({ assertThat(it).contains("from-cause") })
+    }
+
+    @Test
+    fun `logged summary uses the first non-blank line of a multi-line message`() {
         val ex = RuntimeException("\n  \nfirst real line\nsecond line")
 
-        val response = handler.handleUnexpected(ex, null)
+        val logged = captureLogs { handler.handleUnexpected(ex, null) }
 
-        assertThat(response.body!!.detail).isEqualTo("RuntimeException: first real line")
+        assertThat(logged).singleElement().satisfies({
+            assertThat(it).contains("first real line")
+            assertThat(it).doesNotContain("second line")
+        })
+    }
+
+    @Test
+    fun `logged summary falls back when the exception has no message at all`() {
+        val logged = captureLogs { handler.handleUnexpected(RuntimeException(), null) }
+
+        assertThat(logged).singleElement().satisfies({ assertThat(it).contains("no message") })
     }
 
     @Test
@@ -370,9 +456,66 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `handleDataIntegrity falls back to the bare cause message when no PSQLException is in the chain`() {
+    fun `handleDataIntegrity does not echo the value Postgres named`() {
+        // The driver's detail line quotes the offending value verbatim —
+        // the caller's own input at best, another tenant's at worst.
+        val cause =
+            FakePsqlException(
+                serverErrorMessage =
+                    FakeServerErrorMessage(
+                        constraint = "users_email_key",
+                        detail = "Key (email)=(someone.else@example.com) already exists.",
+                    ),
+                sqlState = "23505",
+            )
+        val ex = DataIntegrityViolationException("unique violation", cause)
+
+        val body = handler.handleDataIntegrity(ex, webRequest("/api/v1/users/register")).body!!
+
+        assertThat(body.detail).doesNotContain("someone.else@example.com", "Key (email)=")
+        assertThat(body.detail).isEqualTo("Field `email` already in use")
+    }
+
+    @Test
+    fun `handleDataIntegrity logs the driver message and carries a traceId`() {
+        MDC.put("traceId", "constraint-trace")
+        try {
+            val cause =
+                FakePsqlException(
+                    serverErrorMessage =
+                        FakeServerErrorMessage(
+                            constraint = "users_email_key",
+                            detail = "Key (email)=(someone.else@example.com) already exists.",
+                        ),
+                    sqlState = "23505",
+                    message = "ERROR: duplicate key value violates unique constraint \"users_email_key\"",
+                )
+            val ex = DataIntegrityViolationException("unique violation", cause)
+            var body: ProblemDetail? = null
+
+            val logged = captureLogs(Level.WARN) { body = handler.handleDataIntegrity(ex, webRequest()).body }
+
+            assertThat(body!!.traceId).isEqualTo("constraint-trace")
+            assertThat(logged).singleElement().satisfies({
+                // Everything withheld from the response is here instead.
+                assertThat(it).contains(
+                    "users_email_key",
+                    "constraint-trace",
+                    "duplicate key value",
+                    "someone.else@example.com",
+                )
+            })
+        } finally {
+            MDC.clear()
+        }
+    }
+
+    @Test
+    fun `handleDataIntegrity falls back to a generic detail when no PSQLException is in the chain`() {
         // E.g. an H2-driven test, or a synthetic DataIntegrityViolation
-        // thrown by jOOQ itself without a Postgres-shaped cause.
+        // thrown by jOOQ itself without a Postgres-shaped cause. There is
+        // nothing structured to say, so say nothing structured — the
+        // driver's message is not a substitute for it.
         val ex = DataIntegrityViolationException("Something failed without a structured cause")
 
         val response = handler.handleDataIntegrity(ex, webRequest("/api/v1/whatever"))
@@ -381,7 +524,7 @@ class GlobalExceptionHandlerTest {
         val body = response.body!!
         assertThat(body.constraint).isNull()
         assertThat(body.column).isNull()
-        assertThat(body.detail).contains("Something failed without a structured cause")
+        assertThat(body.detail).isEqualTo("That conflicts with data that already exists.")
         assertThat(body.errors).isEmpty()
     }
 

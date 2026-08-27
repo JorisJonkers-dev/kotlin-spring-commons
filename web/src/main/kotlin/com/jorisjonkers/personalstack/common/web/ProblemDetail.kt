@@ -24,8 +24,11 @@ data class ProblemDetail(
     val errors: List<FieldError> = emptyList(),
     /** Correlation id from MDC, set by the upstream tracing filter. */
     val traceId: String? = null,
-    /** Exception class name — populated for unexpected 5xx so the
-     * support workflow can grep logs without guessing. */
+    /** Exception class name, for the deliberate cases where a
+     * downstream advice classifies a named integration failure the
+     * caller can act on. The catch-all 5xx handler leaves this null
+     * and returns a generic `detail`: correlate on [traceId] in
+     * Grafana instead of reading internals off the wire. */
     val exception: String? = null,
     /** Kubernetes API server's numeric status code on a 502. */
     val kubernetesCode: Int? = null,
