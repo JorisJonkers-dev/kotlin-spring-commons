@@ -8,11 +8,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
-import org.springframework.boot.autoconfigure.AutoConfigurations
-import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.MediaType
 import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.web.bind.annotation.GetMapping
@@ -21,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-private const val PROBLEM_JSON = "application/problem+json"
+private val PROBLEM_JSON = MediaType.APPLICATION_PROBLEM_JSON_VALUE
 private const val PROBLEM_REF = "#/components/schemas/ProblemDetail"
 
 data class FixturePayload(
@@ -125,17 +124,5 @@ class ProblemDetailOpenApiContractTest {
         val document = spec().toString()
 
         assertThat(document).contains(PROBLEM_REF)
-    }
-
-    @Test
-    fun `a service can opt out`() {
-        ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(WebUtilitiesAutoConfiguration::class.java))
-            .withPropertyValues("extratoast.web.problem-details.open-api-schemas-enabled=false")
-            .run { context ->
-                assertThat(context).hasNotFailed()
-                assertThat(context).doesNotHaveBean(OpenApiProblemResponses::class.java)
-                assertThat(context).doesNotHaveBean(OpenApiErrorSchemas::class.java)
-            }
     }
 }

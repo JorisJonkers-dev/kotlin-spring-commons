@@ -9,6 +9,7 @@ import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType as HttpMediaType
 
 /**
  * Attaches the estate's RFC 9457 error responses to every operation.
@@ -43,17 +44,17 @@ class OpenApiProblemResponses(
         statuses.distinct().forEach { status ->
             val key = status.toString()
             if (!responses.containsKey(key)) {
-                responses.addApiResponse(key, problemResponse(status))
+                responses.addApiResponse(key, problemApiResponse(status))
             }
         }
     }
 
-    private fun problemResponse(status: Int): ApiResponse =
+    private fun problemApiResponse(status: Int): ApiResponse =
         ApiResponse()
             .description(reasonPhrase(status))
             .content(
                 Content().addMediaType(
-                    PROBLEM_JSON_MEDIA_TYPE,
+                    HttpMediaType.APPLICATION_PROBLEM_JSON_VALUE,
                     MediaType().schema(
                         Schema<Any>().`$ref`("#/components/schemas/${properties.apiErrorSchemaName}"),
                     ),
@@ -61,8 +62,4 @@ class OpenApiProblemResponses(
             )
 
     private fun reasonPhrase(status: Int): String = HttpStatus.resolve(status)?.reasonPhrase ?: "Error"
-
-    companion object {
-        const val PROBLEM_JSON_MEDIA_TYPE: String = "application/problem+json"
-    }
 }

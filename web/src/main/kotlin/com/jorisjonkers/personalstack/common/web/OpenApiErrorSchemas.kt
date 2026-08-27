@@ -25,7 +25,7 @@ class OpenApiErrorSchemas(
 
     private fun apiErrorSchema(fieldErrorSchemaName: String): Schema<Any> =
         ObjectSchema().apply {
-            description("RFC 7807 problem document with optional validation errors.")
+            description("RFC 9457 problem document with optional validation errors.")
             addProperty("type", StringSchema().example("about:blank"))
             addProperty("title", StringSchema().example("Bad Request"))
             addProperty("status", IntegerSchema().example(HttpStatus.BAD_REQUEST.value()))

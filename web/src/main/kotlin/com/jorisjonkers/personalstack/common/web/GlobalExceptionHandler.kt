@@ -32,7 +32,7 @@ private const val GENERIC_CONSTRAINT_DETAIL = "That conflicts with data that alr
 
 /**
  * Translates exceptions thrown by controllers / command handlers
- * into RFC 7807 [ProblemDetail] payloads.
+ * into RFC 9457 [ProblemDetail] payloads.
  *
  * The mapping intent:
  *

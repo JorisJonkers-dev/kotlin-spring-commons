@@ -47,7 +47,7 @@ module gets, with no configuration:
 
 - `ProblemDetail` and `FieldError` registered as schemas
 - `401`, `403` and `500` declared on every operation as `application/problem+json`
-- `400` and `422` additionally declared on operations that accept a request body
+- `400`, `415` and `422` additionally declared on operations that accept a request body
 
 A response the service declares itself always wins, so a hand-annotated `404` or
 `409` is never overwritten by the baseline. Statuses a service genuinely returns
@@ -63,7 +63,7 @@ extratoast:
       api-error-schema-name: ProblemDetail
       field-error-schema-name: FieldError
       open-api-universal-error-statuses: [401, 403, 500]
-      open-api-request-body-error-statuses: [400, 422]
+      open-api-request-body-error-statuses: [400, 415, 422]
 ```
 
 The universal list includes the security-derived statuses because every service

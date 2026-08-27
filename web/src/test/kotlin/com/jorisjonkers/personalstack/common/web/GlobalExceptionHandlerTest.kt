@@ -18,8 +18,13 @@ import org.slf4j.MDC
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.validation.BindingResult
+import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
@@ -687,21 +692,61 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `every problem response is served as the RFC 9457 media type`() {
-        val request = webRequest()
-
-        val responses =
-            listOf(
-                handler.handleNotFound(NotFoundException("Workspace", "w-1"), request),
-                handler.handleDomain(DomainException("bad", "BAD_REQUEST"), request),
-                handler.handleIllegalState(IllegalStateException("conflict"), request),
-                handler.handleUnexpected(RuntimeException("boom"), request),
+    fun `every exception handler serves the RFC 9457 media type`() {
+        val fixtures: Map<Class<*>, Throwable> =
+            mapOf(
+                NotFoundException::class.java to NotFoundException("Workspace", "w-1"),
+                NoSuchElementException::class.java to NoSuchElementException("absent"),
+                EmptyResultDataAccessException::class.java to EmptyResultDataAccessException(1),
+                DomainException::class.java to DomainException("bad", "BAD_REQUEST"),
+                IllegalArgumentException::class.java to IllegalArgumentException("bad"),
+                IllegalStateException::class.java to IllegalStateException("conflict"),
+                MethodArgumentNotValidException::class.java to
+                    mockk<MethodArgumentNotValidException> {
+                        every { bindingResult } returns
+                            mockk<BindingResult> { every { fieldErrors } returns emptyList() }
+                    },
+                HandlerMethodValidationException::class.java to
+                    mockk<HandlerMethodValidationException>(relaxed = true),
+                ConstraintViolationException::class.java to ConstraintViolationException("nope", emptySet()),
+                HttpMediaTypeNotSupportedException::class.java to
+                    org.springframework.web.HttpMediaTypeNotSupportedException("text/csv"),
+                HttpMessageNotReadableException::class.java to
+                    org.springframework.http.converter.HttpMessageNotReadableException(
+                        "bad JSON",
+                        mockk<org.springframework.http.HttpInputMessage>(),
+                    ),
+                DataIntegrityViolationException::class.java to DataIntegrityViolationException("dup"),
+                Exception::class.java to RuntimeException("boom"),
             )
 
-        assertThat(responses)
-            .allSatisfy { response ->
-                assertThat(response.headers.contentType)
-                    .isEqualTo(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON)
-            }
+        val handlerMethods =
+            GlobalExceptionHandler::class.java.methods
+                .filter { it.isAnnotationPresent(ExceptionHandler::class.java) }
+
+        assertThat(handlerMethods)
+            .describedAs("no @ExceptionHandler methods discovered — the reflection lookup is broken")
+            .isNotEmpty
+
+        handlerMethods.forEach { method ->
+            val handled =
+                method
+                    .getAnnotation(ExceptionHandler::class.java)
+                    .value
+                    .first()
+                    .java
+            val exception =
+                fixtures[handled]
+                    ?: error(
+                        "No fixture for @ExceptionHandler(${handled.simpleName}) on ${method.name}. " +
+                            "A new handler must be added here so its media type stays covered.",
+                    )
+
+            val response = method.invoke(handler, exception, webRequest()) as ResponseEntity<*>
+
+            assertThat(response.headers.contentType)
+                .describedAs("%s must serve the RFC 9457 media type", method.name)
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON)
+        }
     }
 }

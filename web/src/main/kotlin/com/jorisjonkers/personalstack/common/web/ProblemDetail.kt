@@ -4,14 +4,14 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import java.net.URI
 
 /**
- * RFC 7807-flavoured problem payload. The base fields (`type`,
+ * RFC 9457-flavoured problem payload. The base fields (`type`,
  * `title`, `status`, `detail`, `instance`) match the standard; the
  * remaining fields are extension members that carry context
  * specific to this stack (validation violations, traceId, the
  * upstream Kubernetes API server's verdict, …).
  *
  * Empty/null extension fields are stripped from the JSON so the
- * baseline RFC 7807 payload stays minimal for callers that ignore
+ * baseline RFC 9457 payload stays minimal for callers that ignore
  * the extensions.
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)

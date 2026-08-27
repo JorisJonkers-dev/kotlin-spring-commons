@@ -10,6 +10,7 @@ private const val DEFAULT_RATE_LIMIT_CLEANUP_INTERVAL = 128
 private const val STATUS_BAD_REQUEST = 400
 private const val STATUS_UNAUTHORIZED = 401
 private const val STATUS_FORBIDDEN = 403
+private const val STATUS_UNSUPPORTED_MEDIA_TYPE = 415
 private const val STATUS_UNPROCESSABLE_ENTITY = 422
 private const val STATUS_INTERNAL_SERVER_ERROR = 500
 
@@ -39,13 +40,18 @@ data class WebUtilitiesProperties(
             listOf(STATUS_UNAUTHORIZED, STATUS_FORBIDDEN, STATUS_INTERNAL_SERVER_ERROR),
         /**
          * Statuses attached only to operations that accept a request body,
-         * where a malformed or invalid payload is reachable. Declaring
-         * these on a bodyless GET would over-promise, which costs more than
-         * it buys: it makes conformance checking unable to catch a missing
-         * handler.
+         * where a malformed, unsupported or invalid payload is reachable.
+         * All three are emitted by this module's own [GlobalExceptionHandler],
+         * so leaving them undeclared would keep the estate's own failures
+         * undocumented.
+         *
+         * Declaring these on a bodyless GET would over-promise, which costs
+         * more than it buys: it makes conformance checking unable to catch a
+         * missing handler. Domain-specific codes a service returns beyond
+         * this set still need their own `@ApiResponse`.
          */
         val openApiRequestBodyErrorStatuses: List<Int> =
-            listOf(STATUS_BAD_REQUEST, STATUS_UNPROCESSABLE_ENTITY),
+            listOf(STATUS_BAD_REQUEST, STATUS_UNSUPPORTED_MEDIA_TYPE, STATUS_UNPROCESSABLE_ENTITY),
     )
 
     data class CsrfProperties(
