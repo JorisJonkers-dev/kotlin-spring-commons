@@ -45,9 +45,13 @@ private const val GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET = 1000
  *   list carrying field-level (path, message, rejectedValue).
  * * `HttpMessageNotReadableException` /
  *   `HttpMediaTypeNotSupportedException` → 400 / 415.
- * * Any other `Exception` → 500 with the exception class name +
- *   first useful line of `message` (truncated to ~500 chars) +
- *   the MDC `traceId` so support can correlate to logs.
+ * * Any other `Exception` → 500 with a fixed, generic `detail` +
+ *   the MDC `traceId` so support can correlate to logs. The
+ *   exception class and message are logged, never returned: an
+ *   unhandled 5xx is by definition something the caller cannot act
+ *   on, and the message routinely quotes an upstream's verbatim
+ *   rejection. Grafana is where that belongs; `traceId` is the
+ *   hand-off.
  *
  * Application advices that handle integration-specific exceptions
  * (Fabric8's `KubernetesClientException`, vault errors) must sit at
@@ -368,13 +372,12 @@ open class ServerExceptionHandlers : RequestExceptionHandlers() {
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
         val traceId = currentTraceId()
-        val summary = exceptionSummary(ex)
         log.error(
             "Unhandled exception traceId={} path={} exception={} message={}",
             traceId,
             requestPath(request),
             ex.javaClass.name,
-            summary,
+            exceptionSummary(ex),
             ex,
         )
         val body =
@@ -383,32 +386,37 @@ open class ServerExceptionHandlers : RequestExceptionHandlers() {
                     type = ProblemTypes.named("internal-error"),
                     title = "Internal Server Error",
                     status = HttpStatus.INTERNAL_SERVER_ERROR,
-                    detail = "${ex.javaClass.simpleName}: $summary",
+                    detail = GENERIC_DETAIL,
                     request = request,
-                    extensions =
-                        ProblemDetailExtensions(
-                            traceId = traceId,
-                            exception = ex.javaClass.name,
-                        ),
+                    extensions = ProblemDetailExtensions(traceId = traceId),
                 ),
             )
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body)
     }
 
+    /**
+     * Log-only summary; never reaches the response. The exception class
+     * and message describe internals the caller cannot act on, and on an
+     * integration failure they name the integration (broker, vault, mail
+     * relay) and quote its verbatim rejection. The stack trace goes to
+     * the log above, where Grafana correlates it on `traceId` — the one
+     * identifier the response still carries.
+     */
     private fun exceptionSummary(ex: Exception): String {
         val raw = ex.message ?: ex.cause?.message ?: "no message"
         // First non-blank line, with a generous 500 char cap so log
         // hash searches still match production payloads.
         val firstLine = raw.lineSequence().firstOrNull { it.isNotBlank() } ?: raw
-        return if (firstLine.length > MAX_DETAIL_LENGTH) {
-            firstLine.take(MAX_DETAIL_LENGTH) + "…"
+        return if (firstLine.length > MAX_SUMMARY_LENGTH) {
+            firstLine.take(MAX_SUMMARY_LENGTH) + "…"
         } else {
             firstLine
         }
     }
 
     private companion object {
-        private const val MAX_DETAIL_LENGTH = 500
+        private const val MAX_SUMMARY_LENGTH = 500
+        private const val GENERIC_DETAIL = "Something went wrong on our side. Please try again."
     }
 }
 

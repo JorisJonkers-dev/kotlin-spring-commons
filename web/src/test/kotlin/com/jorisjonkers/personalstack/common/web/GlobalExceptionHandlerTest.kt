@@ -2,6 +2,8 @@ package com.jorisjonkers.personalstack.common.web
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.jorisjonkers.personalstack.common.exception.DomainException
 import com.jorisjonkers.personalstack.common.exception.NotFoundException
 import io.mockk.every
@@ -30,6 +32,25 @@ class GlobalExceptionHandlerTest {
         mockk<WebRequest>().also {
             every { it.getDescription(false) } returns "uri=$path"
         }
+
+    /**
+     * Formatted ERROR lines emitted while [block] runs. The response no
+     * longer carries the exception, so the log is the only place these
+     * assertions can look — and the only place Grafana looks.
+     */
+    private fun captureErrorLogs(block: () -> Unit): List<String> {
+        val logger = LoggerFactory.getLogger(GlobalExceptionHandler::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        try {
+            block()
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+        return appender.list.filter { it.level == Level.ERROR }.map { it.formattedMessage }
+    }
 
     @Test
     fun `handleNotFound returns 404 with correct ProblemDetail`() {
@@ -223,7 +244,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `handleUnexpected returns 500 with exception class and message in detail`() {
+    fun `handleUnexpected returns 500 with a generic detail`() {
         val ex = RuntimeException("boom")
 
         val response = handler.handleUnexpected(ex, webRequest("/api/v1/foo"))
@@ -232,39 +253,72 @@ class GlobalExceptionHandlerTest {
         val body = response.body!!
         assertThat(body.status).isEqualTo(500)
         assertThat(body.title).isEqualTo("Internal Server Error")
-        assertThat(body.detail).isEqualTo("RuntimeException: boom")
-        assertThat(body.exception).isEqualTo("java.lang.RuntimeException")
+        assertThat(body.detail).isEqualTo("Something went wrong on our side. Please try again.")
         assertThat(body.instance).isEqualTo(URI.create("/api/v1/foo"))
     }
 
     @Test
-    fun `handleUnexpected truncates long messages`() {
-        val longMessage = "x".repeat(600)
-        val response = handler.handleUnexpected(RuntimeException(longMessage), null)
+    fun `handleUnexpected reveals neither the exception class nor its message`() {
+        // Regression: a broker credential failure surfaced verbatim on the
+        // registration form, naming RabbitMQ and quoting its rejection.
+        val ex =
+            RuntimeException(
+                "com.rabbitmq.client.AuthenticationFailureException: ACCESS_REFUSED - " +
+                    "Login was refused using authentication mechanism PLAIN.",
+            )
 
-        val detail = response.body!!.detail!!
-        assertThat(detail).endsWith("…")
-        // "RuntimeException: " prefix (18) + 500 truncated chars + ellipsis
-        assertThat(detail.length).isLessThanOrEqualTo(550)
+        val body = handler.handleUnexpected(ex, webRequest("/api/v1/auth/register")).body!!
+
+        assertThat(body.exception).isNull()
+        assertThat(body.detail)
+            .doesNotContain("RuntimeException", "rabbitmq", "ACCESS_REFUSED", "PLAIN")
     }
 
     @Test
-    fun `handleUnexpected falls back to cause message when ex has none`() {
-        val cause = IllegalStateException("from-cause")
-        val ex = RuntimeException(null, cause)
+    fun `handleUnexpected logs the exception class and message for Grafana`() {
+        val logged = captureErrorLogs { handler.handleUnexpected(RuntimeException("boom"), webRequest("/api/v1/foo")) }
 
-        val response = handler.handleUnexpected(ex, null)
-
-        assertThat(response.body!!.detail).contains("from-cause")
+        assertThat(logged).singleElement().satisfies({
+            assertThat(it).contains("java.lang.RuntimeException", "boom", "/api/v1/foo")
+        })
     }
 
     @Test
-    fun `handleUnexpected uses first non-blank line of multi-line message`() {
+    fun `logged summary truncates long messages`() {
+        val logged = captureErrorLogs { handler.handleUnexpected(RuntimeException("x".repeat(600)), null) }
+
+        assertThat(logged).singleElement().satisfies({
+            assertThat(it).contains("x".repeat(500) + "…")
+            assertThat(it).doesNotContain("x".repeat(501))
+        })
+    }
+
+    @Test
+    fun `logged summary falls back to the cause message when the exception has none`() {
+        val ex = RuntimeException(null, IllegalStateException("from-cause"))
+
+        val logged = captureErrorLogs { handler.handleUnexpected(ex, null) }
+
+        assertThat(logged).singleElement().satisfies({ assertThat(it).contains("from-cause") })
+    }
+
+    @Test
+    fun `logged summary uses the first non-blank line of a multi-line message`() {
         val ex = RuntimeException("\n  \nfirst real line\nsecond line")
 
-        val response = handler.handleUnexpected(ex, null)
+        val logged = captureErrorLogs { handler.handleUnexpected(ex, null) }
 
-        assertThat(response.body!!.detail).isEqualTo("RuntimeException: first real line")
+        assertThat(logged).singleElement().satisfies({
+            assertThat(it).contains("first real line")
+            assertThat(it).doesNotContain("second line")
+        })
+    }
+
+    @Test
+    fun `logged summary falls back when the exception has no message at all`() {
+        val logged = captureErrorLogs { handler.handleUnexpected(RuntimeException(), null) }
+
+        assertThat(logged).singleElement().satisfies({ assertThat(it).contains("no message") })
     }
 
     @Test
