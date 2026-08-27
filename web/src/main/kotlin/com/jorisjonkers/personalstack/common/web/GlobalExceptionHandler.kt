@@ -83,7 +83,7 @@ open class GlobalExceptionHandler : ServerExceptionHandlers()
 
 open class NotFoundExceptionHandlers : ProblemDetailSupport() {
     @ExceptionHandler(NotFoundException::class)
-    fun handleNotFound(
+    open fun handleNotFound(
         ex: NotFoundException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -102,7 +102,7 @@ open class NotFoundExceptionHandlers : ProblemDetailSupport() {
     }
 
     @ExceptionHandler(NoSuchElementException::class)
-    fun handleNoSuchElement(
+    open fun handleNoSuchElement(
         ex: NoSuchElementException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -121,7 +121,7 @@ open class NotFoundExceptionHandlers : ProblemDetailSupport() {
     }
 
     @ExceptionHandler(EmptyResultDataAccessException::class)
-    fun handleEmptyResultDataAccess(
+    open fun handleEmptyResultDataAccess(
         ex: EmptyResultDataAccessException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -142,7 +142,7 @@ open class NotFoundExceptionHandlers : ProblemDetailSupport() {
 
 open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
     @ExceptionHandler(DomainException::class)
-    fun handleDomain(
+    open fun handleDomain(
         ex: DomainException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -165,7 +165,7 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
     }
 
     @ExceptionHandler(IllegalArgumentException::class)
-    fun handleIllegalArgument(
+    open fun handleIllegalArgument(
         ex: IllegalArgumentException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -184,7 +184,7 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
     }
 
     @ExceptionHandler(IllegalStateException::class)
-    fun handleIllegalState(
+    open fun handleIllegalState(
         ex: IllegalStateException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -215,7 +215,7 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
 
 open class ValidationExceptionHandlers : DomainExceptionHandlers() {
     @ExceptionHandler(MethodArgumentNotValidException::class)
-    fun handleValidation(
+    open fun handleValidation(
         ex: MethodArgumentNotValidException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -243,7 +243,7 @@ open class ValidationExceptionHandlers : DomainExceptionHandlers() {
     }
 
     @ExceptionHandler(HandlerMethodValidationException::class)
-    fun handleHandlerMethodValidation(
+    open fun handleHandlerMethodValidation(
         ex: HandlerMethodValidationException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -268,7 +268,7 @@ open class ValidationExceptionHandlers : DomainExceptionHandlers() {
     }
 
     @ExceptionHandler(ConstraintViolationException::class)
-    fun handleConstraintViolation(
+    open fun handleConstraintViolation(
         ex: ConstraintViolationException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -298,7 +298,7 @@ open class ValidationExceptionHandlers : DomainExceptionHandlers() {
 
 open class RequestExceptionHandlers : DataExceptionHandlers() {
     @ExceptionHandler(HttpMediaTypeNotSupportedException::class)
-    fun handleMediaTypeNotSupported(
+    open fun handleMediaTypeNotSupported(
         ex: HttpMediaTypeNotSupportedException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -317,7 +317,7 @@ open class RequestExceptionHandlers : DataExceptionHandlers() {
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
-    fun handleMessageNotReadable(
+    open fun handleMessageNotReadable(
         ex: HttpMessageNotReadableException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -338,7 +338,7 @@ open class RequestExceptionHandlers : DataExceptionHandlers() {
 
 open class DataExceptionHandlers : ValidationExceptionHandlers() {
     @ExceptionHandler(DataIntegrityViolationException::class)
-    fun handleDataIntegrity(
+    open fun handleDataIntegrity(
         ex: DataIntegrityViolationException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -396,7 +396,7 @@ open class DataExceptionHandlers : ValidationExceptionHandlers() {
 
 open class ServerExceptionHandlers : RequestExceptionHandlers() {
     @ExceptionHandler(Exception::class)
-    fun handleUnexpected(
+    open fun handleUnexpected(
         ex: Exception,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
@@ -485,7 +485,7 @@ open class ProblemDetailSupport {
      * lean on the same envelope shape (instance URI + traceId
      * extraction) without duplicating the boilerplate.
      */
-    protected fun problem(spec: ProblemDetailSpec): ProblemDetail =
+    protected open fun problem(spec: ProblemDetailSpec): ProblemDetail =
         ProblemDetail(
             type = spec.type,
             title = spec.title,
@@ -504,7 +504,7 @@ open class ProblemDetailSupport {
 
     protected fun currentTraceId(): String? = MDC.get("traceId") ?: MDC.get("trace_id")
 
-    protected fun requestPath(request: WebRequest?): String? =
+    protected open fun requestPath(request: WebRequest?): String? =
         when (request) {
             null -> null
             else ->
@@ -516,7 +516,7 @@ open class ProblemDetailSupport {
                 }.getOrNull()
         }
 
-    protected fun logClientError(
+    protected open fun logClientError(
         ex: Exception,
         request: WebRequest?,
         status: HttpStatus,
