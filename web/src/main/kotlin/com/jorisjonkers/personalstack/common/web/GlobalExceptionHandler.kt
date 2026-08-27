@@ -22,6 +22,13 @@ import java.net.URI
 
 private const val GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET = 1000
 
+// Details for the statuses where the exception's own message describes
+// internals rather than anything the caller can act on. The message is
+// logged instead; `traceId` on the response is the hand-off to Grafana.
+private const val GENERIC_SERVER_DETAIL = "Something went wrong on our side. Please try again."
+private const val GENERIC_CONFLICT_DETAIL = "That conflicts with the current state. Refresh and try again."
+private const val GENERIC_CONSTRAINT_DETAIL = "That conflicts with data that already exists."
+
 /**
  * Translates exceptions thrown by controllers / command handlers
  * into RFC 7807 [ProblemDetail] payloads.
@@ -36,9 +43,14 @@ private const val GLOBAL_EXCEPTION_HANDLER_ORDER_OFFSET = 1000
  * * `IllegalArgumentException` → 400 with the message bubbled
  *   through. Command handlers raise this when an inbound request
  *   is structurally valid but business-invalid.
- * * `IllegalStateException` → 409 — the request was structurally
- *   valid but the system is in a state that can't service it
- *   (e.g. Vault not configured, repository feature disabled).
+ * * `IllegalStateException` → 409 with a generic `detail` — the
+ *   request was structurally valid but the system is in a state that
+ *   can't service it (e.g. Vault not configured, repository feature
+ *   disabled). The message is logged, not returned: this is what
+ *   Kotlin's `error(…)` / `check(…)` throw, so it carries developer
+ *   text and often an id or a URL. A conflict the caller is *meant*
+ *   to read belongs in a `DomainException` with a `code`, which is
+ *   the mapping directly above.
  * * `MethodArgumentNotValidException` /
  *   `HandlerMethodValidationException` /
  *   `ConstraintViolationException` → 422 with a `violations`
@@ -176,15 +188,25 @@ open class DomainExceptionHandlers : NotFoundExceptionHandlers() {
         ex: IllegalStateException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
-        logClientError(ex, request, HttpStatus.CONFLICT)
+        val traceId = currentTraceId()
+        // Not logClientError: this is nearly always ours, not the
+        // caller's, and debug is off in production.
+        log.warn(
+            "Conflict traceId={} path={} message={}",
+            traceId,
+            requestPath(request),
+            ex.message,
+            ex,
+        )
         val body =
             problem(
                 ProblemDetailSpec(
                     type = ProblemTypes.named("conflict"),
                     title = "Conflict",
                     status = HttpStatus.CONFLICT,
-                    detail = ex.message ?: "Request conflicts with current state",
+                    detail = GENERIC_CONFLICT_DETAIL,
                     request = request,
+                    extensions = ProblemDetailExtensions(traceId = traceId),
                 ),
             )
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body)
@@ -321,28 +343,36 @@ open class DataExceptionHandlers : ValidationExceptionHandlers() {
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
         val info = PostgresConstraintParser.parse(ex)
-        logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
-        val body = dataIntegrityProblem(ex, request, info)
+        val traceId = currentTraceId()
+        // The driver's own text — which quotes the offending value —
+        // stays here rather than going out on the wire.
+        log.warn(
+            "Constraint violation traceId={} path={} constraint={} message={} postgresDetail={}",
+            traceId,
+            requestPath(request),
+            info.constraint,
+            ex.mostSpecificCause.message,
+            info.postgresDetail,
+        )
+        val body = dataIntegrityProblem(request, info, traceId)
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
     }
 
     private fun dataIntegrityProblem(
-        ex: DataIntegrityViolationException,
         request: WebRequest?,
         info: PostgresConstraintParser.ConstraintInfo,
-    ): ProblemDetail {
-        val detail =
-            info.detail
-                ?: "Database constraint violation: ${ex.mostSpecificCause.message ?: "no message"}"
-        return problem(
+        traceId: String?,
+    ): ProblemDetail =
+        problem(
             ProblemDetailSpec(
                 type = ProblemTypes.named("constraint-violation"),
                 title = "Constraint violation",
                 status = HttpStatus.UNPROCESSABLE_ENTITY,
-                detail = detail,
+                detail = info.detail ?: GENERIC_CONSTRAINT_DETAIL,
                 request = request,
                 extensions =
                     ProblemDetailExtensions(
+                        traceId = traceId,
                         errors =
                             info.column
                                 ?.let {
@@ -362,7 +392,6 @@ open class DataExceptionHandlers : ValidationExceptionHandlers() {
                     ),
             ),
         )
-    }
 }
 
 open class ServerExceptionHandlers : RequestExceptionHandlers() {
@@ -386,7 +415,7 @@ open class ServerExceptionHandlers : RequestExceptionHandlers() {
                     type = ProblemTypes.named("internal-error"),
                     title = "Internal Server Error",
                     status = HttpStatus.INTERNAL_SERVER_ERROR,
-                    detail = GENERIC_DETAIL,
+                    detail = GENERIC_SERVER_DETAIL,
                     request = request,
                     extensions = ProblemDetailExtensions(traceId = traceId),
                 ),
@@ -416,7 +445,6 @@ open class ServerExceptionHandlers : RequestExceptionHandlers() {
 
     private companion object {
         private const val MAX_SUMMARY_LENGTH = 500
-        private const val GENERIC_DETAIL = "Something went wrong on our side. Please try again."
     }
 }
 

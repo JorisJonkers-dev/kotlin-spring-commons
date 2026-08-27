@@ -48,26 +48,24 @@ internal object PostgresConstraintParser {
                 else -> "Invalid value"
             }
 
+        /**
+         * Human-readable line for the response. Deliberately excludes
+         * [postgresDetail]: the driver's line quotes the offending value
+         * (`Key (name)=(foo) already exists.`), which is the caller's own
+         * input echoed back at best and another tenant's data at worst.
+         * The raw line is logged by the handler instead.
+         */
         val detail: String?
-            get() {
-                val parts =
-                    buildList {
-                        when {
-                            sqlState == "23503" && column != null && referencedTable != null ->
-                                add("Field `$column` references a $referencedTable row that does not exist")
-                            sqlState == "23505" && column != null ->
-                                add("Field `$column` already in use")
-                            sqlState == "23502" && column != null ->
-                                add("Field `$column` is required")
-                            column != null && constraint != null ->
-                                add("Field `$column` violated constraint `$constraint`")
-                            constraint != null ->
-                                add("Constraint `$constraint` violated")
-                        }
-                        postgresDetail?.let { add(it) }
-                    }
-                return parts.takeIf { it.isNotEmpty() }?.joinToString(": ")
-            }
+            get() =
+                when {
+                    sqlState == "23503" && column != null && referencedTable != null ->
+                        "Field `$column` references a $referencedTable row that does not exist"
+                    sqlState == "23505" && column != null -> "Field `$column` already in use"
+                    sqlState == "23502" && column != null -> "Field `$column` is required"
+                    column != null && constraint != null -> "Field `$column` violated constraint `$constraint`"
+                    constraint != null -> "Constraint `$constraint` violated"
+                    else -> null
+                }
     }
 
     fun parse(ex: DataIntegrityViolationException): ConstraintInfo {

@@ -38,7 +38,10 @@ class PostgresConstraintParserTest {
     }
 
     @Test
-    fun `parser keeps unmatched postgres detail without a parsed column`() {
+    fun `parser keeps unmatched postgres detail off the response detail`() {
+        // `Failing row contains (1, -1).` is row data. It stays on
+        // postgresDetail for the handler to log, and out of the line the
+        // caller reads.
         val cause =
             FakePsqlException(
                 serverErrorMessage =
@@ -54,9 +57,8 @@ class PostgresConstraintParserTest {
 
         assertThat(info.constraint).isEqualTo("widgets_quantity_check")
         assertThat(info.column).isNull()
-        assertThat(info.detail).isEqualTo(
-            "Constraint `widgets_quantity_check` violated: Failing row contains (1, -1).",
-        )
+        assertThat(info.postgresDetail).isEqualTo("Failing row contains (1, -1).")
+        assertThat(info.detail).isEqualTo("Constraint `widgets_quantity_check` violated")
     }
 
     @Test
