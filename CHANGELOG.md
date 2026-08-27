@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.0...v0.9.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **email:** register EmailService instead of silently skipping it ([#35](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/35)) ([5b61eba](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/5b61eba91558d8f8fecb2bfaca7ff08f758220fc))
+* renormalize gradlew.bat line endings ([#30](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/30)) ([1ed87b6](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/1ed87b6a4b7652cc0ce282d8c7c7e5360c5aa692))
+
 ## [0.9.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.8.0...v0.9.0) (2026-06-30)
 
 
