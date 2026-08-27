@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.2...v0.9.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* **web:** make exception handlers proxyable so ProblemDetail survives CGLIB ([#37](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/37)) ([76e9884](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/76e9884f14f9b2f3d0dbc774ba593e9eb4bd83cc))
+
 ## [0.9.2](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.1...v0.9.2) (2026-08-27)
 
 
