@@ -2,15 +2,31 @@ package com.jorisjonkers.personalstack.common.email
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.mail.MailException
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.mail.javamail.MimeMessageHelper
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 
+// No @ConditionalOnBean here, deliberately.
+//
+// This class is picked up by component scanning, and @ConditionalOnBean is
+// evaluated while the scan registers bean definitions -- which happens before
+// auto-configuration runs. JavaMailSender comes from Spring Boot's
+// MailSenderAutoConfiguration, so at evaluation time it does not exist yet, the
+// condition is false, and EmailService is never registered. Spring Boot's own
+// documentation says these annotations are only reliable on auto-configuration
+// classes.
+//
+// The effect was silent: auth-api's listeners take Optional<EmailService>, found
+// it empty, logged at DEBUG and returned. Registration confirmation and password
+// reset mail were never sent and never errored -- no SMTP session ever reached
+// the mail server.
+//
+// Without the condition, a consumer with no JavaMailSender fails to start with a
+// missing-dependency error instead. That is the intended behaviour: a service
+// that wires in the email module and cannot send email should say so loudly.
 @Service
-@ConditionalOnBean(JavaMailSender::class)
 open class EmailService(
     private val mailSender: JavaMailSender,
     @param:Value("\${app.mail.from:noreply@example.test}")
