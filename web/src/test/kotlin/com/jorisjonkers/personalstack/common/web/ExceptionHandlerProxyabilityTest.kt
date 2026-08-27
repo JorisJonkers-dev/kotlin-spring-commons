@@ -48,9 +48,10 @@ class ExceptionHandlerProxyabilityTest {
                 .filter { Modifier.isFinal(it.modifiers) }
                 .map { "${it.declaringClass.simpleName}.${it.name}" }
 
-        assertThat(finals)
-            .describedAs("final @ExceptionHandler methods cannot be CGLIB-proxied and will NPE on the uninitialised proxy")
-            .isEmpty()
+        val why =
+            "final @ExceptionHandler methods cannot be CGLIB-proxied and will NPE " +
+                "on the uninitialised proxy"
+        assertThat(finals).describedAs(why).isEmpty()
     }
 
     @Test
