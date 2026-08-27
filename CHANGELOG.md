@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.1...v0.9.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* **web:** stop returning exception internals in problem details ([#34](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/34)) ([b7a99c4](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/b7a99c4534912ce13bb45cbec799e593e924f272))
+
 ## [0.9.1](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.0...v0.9.1) (2026-08-27)
 
 
