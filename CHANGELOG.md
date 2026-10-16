@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.3...v0.10.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the unused MatchCandidate type from sync-core. No pass or service ever produced one, and no consumer in the estate uses it.
+
+### Tests
+
+* keep only tests that specify behaviour ([#49](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/49)) ([5d8a11c](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/5d8a11caabe3c3dfa0911b3db303fa98405f6c55)), closes [#48](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/48)
+
 ## [0.9.3](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.2...v0.9.3) (2026-08-27)
 
 
