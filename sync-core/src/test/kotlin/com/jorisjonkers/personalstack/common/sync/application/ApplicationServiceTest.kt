@@ -12,6 +12,7 @@ import com.jorisjonkers.personalstack.common.sync.domain.ChangeSet
 import com.jorisjonkers.personalstack.common.sync.domain.CursorCheckpoint
 import com.jorisjonkers.personalstack.common.sync.domain.IdempotencyKey
 import com.jorisjonkers.personalstack.common.sync.domain.ListTransactionMode
+import com.jorisjonkers.personalstack.common.sync.domain.LocalId
 import com.jorisjonkers.personalstack.common.sync.domain.MissingReason
 import com.jorisjonkers.personalstack.common.sync.domain.MissingRemotePolicy
 import com.jorisjonkers.personalstack.common.sync.domain.RemoteChange
@@ -58,63 +59,36 @@ import java.time.Instant
 // Structural threshold: this suite keeps application-service scenarios together to share the sync harness.
 class ApplicationCommandServiceTest {
     @Test
-    fun `entity command covers defaults and generated members`() {
+    fun `an entity command is a live run with a fresh correlation and no idempotency key by default`() {
         val command = SyncEntityCommand(externalId = WidgetId("entity-default"), source = SyncTriggerSource.TEST)
+        val other = SyncEntityCommand(externalId = WidgetId("entity-default"), source = SyncTriggerSource.TEST)
 
-        assertThat(command.component1()).isEqualTo(WidgetId("entity-default"))
-        assertThat(command.component2()).isEqualTo(SyncTriggerSource.TEST)
-        assertThat(command.component3().value).isNotBlank()
-        assertThat(command.component4()).isNull()
-        assertThat(command.component5()).isFalse()
-
-        val copy = command.copy(dryRun = true)
-        assertThat(command.copy()).isEqualTo(command)
-        assertThat(command.copy().hashCode()).isEqualTo(command.hashCode())
-        assertThat(command.toString()).contains("SyncEntityCommand")
-        assertThat(copy).isNotEqualTo(command)
-        assertThat(copy.dryRun).isTrue()
+        assertThat(command.correlationId).isNotEqualTo(other.correlationId)
+        assertThat(command.idempotencyKey).isNull()
+        assertThat(command.dryRun).isFalse()
     }
 
     @Test
-    fun `list command covers defaults and generated members`() {
-        val scope = WidgetScope("list-default")
-        val command = SyncListCommand(scope = scope, source = SyncTriggerSource.TEST)
+    fun `a list command is a live run with a fresh correlation and no idempotency key by default`() {
+        val command = SyncListCommand(scope = WidgetScope("list-default"), source = SyncTriggerSource.TEST)
+        val other = SyncListCommand(scope = WidgetScope("list-default"), source = SyncTriggerSource.TEST)
 
-        assertThat(command.component1()).isEqualTo(scope)
-        assertThat(command.component2()).isEqualTo(SyncTriggerSource.TEST)
-        assertThat(command.component3().value).isNotBlank()
-        assertThat(command.component4()).isNull()
-        assertThat(command.component5()).isFalse()
-
-        val copy = command.copy(dryRun = true)
-        assertThat(command.copy()).isEqualTo(command)
-        assertThat(command.copy().hashCode()).isEqualTo(command.hashCode())
-        assertThat(command.toString()).contains("SyncListCommand")
-        assertThat(copy).isNotEqualTo(command)
-        assertThat(copy.dryRun).isTrue()
+        assertThat(command.correlationId).isNotEqualTo(other.correlationId)
+        assertThat(command.idempotencyKey).isNull()
+        assertThat(command.dryRun).isFalse()
     }
 
     @Test
-    fun `spawn command covers defaults and generated members`() {
+    fun `a spawn command resumes from the checkpoint at the configured page size by default`() {
         val command = SpawnSyncCommand<WidgetScope>(scope = null, source = SyncTriggerSource.TEST)
+        val other = SpawnSyncCommand<WidgetScope>(scope = null, source = SyncTriggerSource.TEST)
 
-        assertThat(command.component1()).isNull()
-        assertThat(command.component2()).isNull()
-        assertThat(command.component3()).isNull()
-        assertThat(command.component4()).isFalse()
-        assertThat(command.component5()).isEqualTo(SyncTriggerSource.TEST)
-        assertThat(command.component6().value).isNotBlank()
-        assertThat(command.component7()).isNull()
-        assertThat(command.component8()).isFalse()
-
-        val copy = command.copy(cursor = SyncCursor("explicit"), pageSize = 25, fullSync = true)
-        assertThat(command.copy()).isEqualTo(command)
-        assertThat(command.copy().hashCode()).isEqualTo(command.hashCode())
-        assertThat(command.toString()).contains("SpawnSyncCommand")
-        assertThat(copy).isNotEqualTo(command)
-        assertThat(copy.cursor).isEqualTo(SyncCursor("explicit"))
-        assertThat(copy.pageSize).isEqualTo(25)
-        assertThat(copy.fullSync).isTrue()
+        assertThat(command.cursor).isNull()
+        assertThat(command.pageSize).isNull()
+        assertThat(command.fullSync).isFalse()
+        assertThat(command.correlationId).isNotEqualTo(other.correlationId)
+        assertThat(command.idempotencyKey).isNull()
+        assertThat(command.dryRun).isFalse()
     }
 
     @Test
@@ -560,10 +534,37 @@ class SyncEntityApplicationServiceTest {
 
         assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
         assertThat(report.outcomes.single().action).isEqualTo(SyncAction.UNLINK)
-        assertThat(harness.effectOutbox.appended).hasSize(1)
-        assertThat(harness.effectOutbox.appended.single()).isInstanceOf(SyncEffect.Recalculate::class.java)
+        assertThat(harness.effectOutbox.appended).containsExactly(
+            SyncEffect.Recalculate(
+                key = "recalculate:local-effect",
+                subject = SyncSubject.Local(LocalId("local-effect")),
+                reason = "local-only",
+            ),
+        )
         assertThat(harness.unitOfWork.afterCommitRun).isEqualTo(1)
         assertThat(harness.effectOutbox.relayRequests).isEqualTo(1)
+    }
+
+    @Test
+    fun `an event a decision publishes is appended to the outbox as declared`() {
+        val event =
+            SyncEffect.PublishEvent(
+                key = "unlinked:local-event",
+                type = "widget.unlinked",
+                payloadRef = "local-event",
+            )
+        val harness =
+            WidgetHarness.build(
+                policySet = WidgetHarnessPolicies(missingRemotePolicy = unlinkPolicyEmitting(event)),
+            )
+        val id = WidgetId("event-unlink")
+        harness.repository.seed(Widget.linked("local-event", id, "SKU-EVENT", "Local"))
+
+        SyncUseCaseFactory(harness.clock).entity(harness.definition).sync(
+            SyncEntityCommand(externalId = id, source = SyncTriggerSource.TEST),
+        )
+
+        assertThat(harness.effectOutbox.appended).containsExactly(event)
     }
 }
 
@@ -1341,6 +1342,11 @@ fun recalculatingUnlinkPolicy(): MissingRemotePolicy<Widget, RemoteWidget, Widge
                     ),
                 ),
         )
+    }
+
+fun unlinkPolicyEmitting(effect: SyncEffect): MissingRemotePolicy<Widget, RemoteWidget, WidgetId, WidgetKey> =
+    MissingRemotePolicy { local, _ ->
+        SyncDecision.Unlink(local = local, unlinkReason = UnlinkReason.Policy("local-only"), effects = listOf(effect))
     }
 
 fun completedReport(status: SyncReportStatus): SyncReport =

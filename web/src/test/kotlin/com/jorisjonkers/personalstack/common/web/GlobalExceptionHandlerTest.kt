@@ -566,7 +566,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `ProblemDetail data class properties and defaults`() {
+    fun `a problem detail is about-blank with no detail, instance, errors, trace or exception unless given`() {
         val pd = ProblemDetail(title = "Test", status = 200)
         assertThat(pd.type).isEqualTo(URI.create("about:blank"))
         assertThat(pd.detail).isNull()
@@ -574,35 +574,6 @@ class GlobalExceptionHandlerTest {
         assertThat(pd.errors).isEmpty()
         assertThat(pd.traceId).isNull()
         assertThat(pd.exception).isNull()
-    }
-
-    @Test
-    fun `ProblemDetail with all fields`() {
-        val pd =
-            ProblemDetail(
-                type = URI.create("https://example.com/error"),
-                title = "Error",
-                status = 400,
-                detail = "Something went wrong",
-                instance = URI.create("/api/test"),
-                errors = listOf(FieldError("f1", "m1", "rv")),
-                traceId = "abc",
-                exception = "java.lang.Foo",
-                kubernetesCode = 403,
-                kubernetesReason = "Forbidden",
-            )
-        assertThat(pd.type).isEqualTo(URI.create("https://example.com/error"))
-        assertThat(pd.title).isEqualTo("Error")
-        assertThat(pd.status).isEqualTo(400)
-        assertThat(pd.detail).isEqualTo("Something went wrong")
-        assertThat(pd.instance).isEqualTo(URI.create("/api/test"))
-        assertThat(pd.errors).hasSize(1)
-        assertThat(pd.errors[0].field).isEqualTo("f1")
-        assertThat(pd.errors[0].rejectedValue).isEqualTo("rv")
-        assertThat(pd.traceId).isEqualTo("abc")
-        assertThat(pd.exception).isEqualTo("java.lang.Foo")
-        assertThat(pd.kubernetesCode).isEqualTo(403)
-        assertThat(pd.kubernetesReason).isEqualTo("Forbidden")
     }
 
     @Test
@@ -638,14 +609,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    fun `ProblemDetail equals and hashCode`() {
-        val pd1 = ProblemDetail(title = "T", status = 200)
-        val pd2 = ProblemDetail(title = "T", status = 200)
-        assertThat(pd1).isEqualTo(pd2)
-        assertThat(pd1.hashCode()).isEqualTo(pd2.hashCode())
-    }
-
-    @Test
     fun `handleMessageNotReadable returns 400`() {
         val ex =
             org.springframework.http.converter.HttpMessageNotReadableException(
@@ -670,16 +633,6 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.statusCode).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
         assertThat(response.body!!.title).isEqualTo("Unsupported Media Type")
-    }
-
-    @Test
-    fun `FieldError data class`() {
-        val fe = FieldError(field = "email", message = "required", rejectedValue = null)
-        assertThat(fe.field).isEqualTo("email")
-        assertThat(fe.message).isEqualTo("required")
-        val fe2 = fe.copy(message = "invalid", rejectedValue = "x")
-        assertThat(fe2.message).isEqualTo("invalid")
-        assertThat(fe2.rejectedValue).isEqualTo("x")
     }
 
     private class ExposedProblemDetailSupport : ProblemDetailSupport() {

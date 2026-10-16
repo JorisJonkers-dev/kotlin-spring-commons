@@ -31,7 +31,7 @@ private typealias DslMissingRemotePolicy = MissingRemotePolicy<Widget, RemoteWid
 class SyncDslTest {
     // Structural threshold: this DSL smoke test intentionally exercises every setter in one definition.
     @Test
-    fun `syncResource wires every setter and sub-builder override`() {
+    fun `a sync resource keeps every port, strategy and override it is given`() {
         val fixture = dslWiringFixture()
         val definition = buildDslDefinition(fixture)
 
@@ -230,87 +230,13 @@ class SyncDslTest {
     }
 
     @Test
-    fun `execution options defaults overrides data members and enums are covered`() {
+    fun `a sync runs per record, 500 to a page, with a 10 second lock, remote authoritative, by default`() {
         val defaults = SyncExecutionOptions()
-        val overridden =
-            defaults.copy(
-                listTransactionMode = ListTransactionMode.PER_PAGE,
-                pageSize = 100,
-                lockTimeout = Duration.ofSeconds(3),
-                authorityMode = AuthorityMode.LOCAL_AUTHORITATIVE,
-            )
 
         assertThat(defaults.listTransactionMode).isEqualTo(ListTransactionMode.PER_RECORD)
         assertThat(defaults.pageSize).isEqualTo(500)
         assertThat(defaults.lockTimeout).isEqualTo(Duration.ofSeconds(10))
         assertThat(defaults.authorityMode).isEqualTo(AuthorityMode.REMOTE_AUTHORITATIVE)
-        assertThat(overridden.component1()).isEqualTo(ListTransactionMode.PER_PAGE)
-        assertThat(overridden.component2()).isEqualTo(100)
-        assertThat(overridden.component3()).isEqualTo(Duration.ofSeconds(3))
-        assertThat(overridden.component4()).isEqualTo(AuthorityMode.LOCAL_AUTHORITATIVE)
-        assertThat(overridden).isEqualTo(overridden.copy())
-        assertThat(overridden.hashCode()).isEqualTo(overridden.copy().hashCode())
-        assertThat(overridden.toString()).contains("pageSize=100")
-        assertThat(AuthorityMode.entries).containsExactly(
-            AuthorityMode.REMOTE_AUTHORITATIVE,
-            AuthorityMode.LOCAL_AUTHORITATIVE,
-            AuthorityMode.MULTI_WRITER,
-        )
-        assertThat(ListTransactionMode.entries).containsExactly(
-            ListTransactionMode.PER_RECORD,
-            ListTransactionMode.PER_PAGE,
-            ListTransactionMode.WHOLE_SCOPE,
-        )
-    }
-
-    @Test
-    fun `sync policies data members use supplied and default policies`() {
-        val missingRemotePolicy = WidgetHarness.UNLINK_MISSING
-        val importPolicy = ImportPolicy<RemoteWidget> { remote -> remote.importable }
-        val policies =
-            SyncPolicies<Widget, RemoteWidget, WidgetId, WidgetKey>(
-                missingRemotePolicy = missingRemotePolicy,
-                importPolicy = importPolicy,
-            )
-
-        assertThat(policies.component1().decide(conflict()).action).isEqualTo(SyncAction.CONFLICT)
-        assertThat(policies.component2()).isSameAs(missingRemotePolicy)
-        assertThat(policies.component3()).isSameAs(importPolicy)
-        assertThat(policies.copy()).isEqualTo(policies)
-        assertThat(policies.copy().hashCode()).isEqualTo(policies.hashCode())
-        assertThat(policies.toString()).contains("SyncPolicies")
-    }
-
-    @Test
-    fun `sync definition and ports data members are covered`() {
-        val definition = minimalDefinition()
-        val ports = definition.ports
-
-        assertThat(definition.component1()).isEqualTo(SyncName("widget"))
-        assertThat(definition.component2()).isSameAs(definition.localProjector)
-        assertThat(definition.component3()).isSameAs(definition.remoteProjector)
-        assertThat(definition.component4()).isSameAs(definition.differ)
-        assertThat(definition.component5()).isSameAs(definition.mapper)
-        assertThat(definition.component6()).isSameAs(definition.matchPlan)
-        assertThat(definition.component7()).isSameAs(definition.policies)
-        assertThat(definition.component8()).isSameAs(definition.execution)
-        assertThat(definition.component9()).isSameAs(ports)
-        assertThat(definition.copy()).isEqualTo(definition)
-        assertThat(definition.copy().hashCode()).isEqualTo(definition.hashCode())
-        assertThat(definition.toString()).contains("SyncDefinition")
-
-        assertThat(ports.component1()).isSameAs(ports.localRepository)
-        assertThat(ports.component2()).isSameAs(ports.remoteCatalog)
-        assertThat(ports.component3()).isSameAs(ports.lockManager)
-        assertThat(ports.component4()).isSameAs(ports.unitOfWork)
-        assertThat(ports.component5()).isSameAs(ports.effectOutbox)
-        assertThat(ports.component6()).isSameAs(ports.auditTrail)
-        assertThat(ports.component7()).isSameAs(ports.observer)
-        assertThat(ports.component8()).isSameAs(ports.idempotencyStore)
-        assertThat(ports.component9()).isSameAs(ports.checkpointStore)
-        assertThat(ports.copy()).isEqualTo(ports)
-        assertThat(ports.copy().hashCode()).isEqualTo(ports.hashCode())
-        assertThat(ports.toString()).contains("SyncPorts")
     }
 
     @Test

@@ -18,7 +18,6 @@ import com.jorisjonkers.personalstack.common.sync.domain.SyncDefinition
 import com.jorisjonkers.personalstack.common.sync.domain.SyncExecutionOptions
 import com.jorisjonkers.personalstack.common.sync.domain.SyncFailure
 import com.jorisjonkers.personalstack.common.sync.domain.SyncFailureKind
-import com.jorisjonkers.personalstack.common.sync.domain.SyncName
 import com.jorisjonkers.personalstack.common.sync.domain.SyncOutcome
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReport
 import com.jorisjonkers.personalstack.common.sync.domain.SyncReportStatus
@@ -36,45 +35,53 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
 
-class CoverageGapTest {
+class SyncServiceEdgeCasesTest {
     @Test
-    fun `constructs services without clock and executes one sync each`() {
-        val entityHarness = WidgetHarness.build()
-        val entityId = WidgetId("default-clock-entity")
-        entityHarness.remoteCatalog.foundOne(entityId, remoteRecord(entityId.value))
+    fun `an entity sync built without a clock still runs`() {
+        val harness = WidgetHarness.build()
+        val id = WidgetId("default-clock-entity")
+        harness.remoteCatalog.foundOne(id, remoteRecord(id.value))
 
-        val entityReport =
-            SyncEntityService(entityHarness.definition).sync(
-                SyncEntityCommand(externalId = entityId, source = SyncTriggerSource.TEST),
+        val report =
+            SyncEntityService(harness.definition).sync(
+                SyncEntityCommand(externalId = id, source = SyncTriggerSource.TEST),
             )
 
-        val listHarness = WidgetHarness.build()
-        listHarness.remoteCatalog.onFetchForScope(
-            RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord("default-clock-list"))))),
-        )
-
-        val listReport =
-            SyncListService(listHarness.definition).sync(
-                SyncListCommand(scope = WidgetScope("default"), source = SyncTriggerSource.TEST),
-            )
-
-        val spawnHarness = WidgetHarness.build()
-        spawnHarness.remoteCatalog.enqueuePage(
-            RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord("default-clock-spawn"))))),
-        )
-
-        val spawnReport =
-            SpawnSyncService(spawnHarness.definition).spawn(
-                SpawnSyncCommand(scope = WidgetScope("default"), source = SyncTriggerSource.TEST),
-            )
-
-        assertThat(entityReport.status).isEqualTo(SyncReportStatus.SUCCEEDED)
-        assertThat(listReport.status).isEqualTo(SyncReportStatus.SUCCEEDED)
-        assertThat(spawnReport.status).isEqualTo(SyncReportStatus.SKIPPED)
+        assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
     }
 
     @Test
-    fun `entity equal decision executes non mutating apply branch`() {
+    fun `a list sync built without a clock still runs`() {
+        val harness = WidgetHarness.build()
+        harness.remoteCatalog.onFetchForScope(
+            RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord("default-clock-list"))))),
+        )
+
+        val report =
+            SyncListService(harness.definition).sync(
+                SyncListCommand(scope = WidgetScope("default"), source = SyncTriggerSource.TEST),
+            )
+
+        assertThat(report.status).isEqualTo(SyncReportStatus.SUCCEEDED)
+    }
+
+    @Test
+    fun `a spawn built without a clock still runs`() {
+        val harness = WidgetHarness.build()
+        harness.remoteCatalog.enqueuePage(
+            RemoteFetch.Found(remotePage(listOf(upsert(remoteRecord("default-clock-spawn"))))),
+        )
+
+        val report =
+            SpawnSyncService(harness.definition).spawn(
+                SpawnSyncCommand(scope = WidgetScope("default"), source = SyncTriggerSource.TEST),
+            )
+
+        assertThat(report.status).isEqualTo(SyncReportStatus.SKIPPED)
+    }
+
+    @Test
+    fun `an entity sync leaves a local that equals the remote untouched`() {
         val harness = WidgetHarness.build()
         val id = WidgetId("equal-apply-else")
         harness.repository.seed(Widget.linked("local-equal-apply", id, "SKU-EQUAL", "Same"))
@@ -93,7 +100,7 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `entity idempotency fails a failed report`() {
+    fun `a failed entity sync marks its idempotency key failed`() {
         val harness = WidgetHarness.build()
         val id = WidgetId("idempotency-fail")
         val key = IdempotencyKey("failed-key")
@@ -111,7 +118,7 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `entity idempotency completes successful import through public api`() {
+    fun `a successful entity import completes its idempotency key`() {
         val harness = WidgetHarness.build()
         val id = WidgetId("idempotency-complete")
         val key = IdempotencyKey("completed-key")
@@ -129,7 +136,7 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `list page with explicit delete change ignores delete while syncing upserts`() {
+    fun `a list sync ignores explicit deletes in the page and syncs its upserts`() {
         val harness = WidgetHarness.build()
         val scope = WidgetScope("delete-change")
         harness.remoteCatalog.onFetchForScope(
@@ -159,7 +166,7 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `list equal decision executes non mutating decision branch`() {
+    fun `a list sync leaves a local that equals the remote untouched`() {
         val scope = WidgetScope("list-equal")
         val harness = WidgetHarness.build()
         val id = WidgetId("list-equal-else")
@@ -183,7 +190,7 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `spawn with non null scope uses scope subject branch`() {
+    fun `a scoped spawn reports its outcome against the scope`() {
         val scope = WidgetScope("scoped-spawn")
         val harness = WidgetHarness.build()
         harness.remoteCatalog.enqueuePage(RemoteFetch.Found(remotePage()))
@@ -203,29 +210,9 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `sync definition generated copy is exercised`() {
+    fun `a sync definition uses the default execution options unless given`() {
         val definition = WidgetHarness.build().definition
 
-        val copy = definition.copy(name = SyncName("copied-widget"))
-        val sameCopy = definition.copy()
-
-        assertThat(copy.name).isEqualTo(SyncName("copied-widget"))
-        assertThat(copy).isNotEqualTo(definition)
-        // Exercise the remaining generated data-class members (equals, hashCode, toString, componentN).
-        assertThat(sameCopy).isEqualTo(definition)
-        assertThat(sameCopy.hashCode()).isEqualTo(definition.hashCode())
-        assertThat(definition.toString()).contains("SyncDefinition")
-        assertThat(definition.component1()).isEqualTo(definition.name)
-        assertThat(definition.component2()).isSameAs(definition.localProjector)
-        assertThat(definition.component3()).isSameAs(definition.remoteProjector)
-        assertThat(definition.component4()).isSameAs(definition.differ)
-        assertThat(definition.component5()).isSameAs(definition.mapper)
-        assertThat(definition.component6()).isEqualTo(definition.matchPlan)
-        assertThat(definition.component7()).isEqualTo(definition.policies)
-        assertThat(definition.component8()).isEqualTo(definition.execution)
-        assertThat(definition.component9()).isEqualTo(definition.ports)
-
-        // Construct without `execution` to exercise the default-parameter constructor.
         val viaDefaultExecution =
             SyncDefinition(
                 name = definition.name,
@@ -237,11 +224,12 @@ class CoverageGapTest {
                 policies = definition.policies,
                 ports = definition.ports,
             )
+
         assertThat(viaDefaultExecution.execution).isEqualTo(SyncExecutionOptions())
     }
 
     @Test
-    fun `entity sync with denied lock fails idempotency through public api`() {
+    fun `an entity sync denied its lock marks its idempotency key failed`() {
         val harness = WidgetHarness.build()
         val id = WidgetId("lock-denied")
         val key = IdempotencyKey("lock-denied-key")
@@ -259,7 +247,7 @@ class CoverageGapTest {
     }
 
     @Test
-    fun `finalize idempotency completes a defensive failed-outcome under non-failed report`() {
+    fun `a failed outcome under a report that did not fail still completes the idempotency key`() {
         // A single-outcome entity sync cannot itself produce a Failed outcome under a
         // SUCCEEDED/PARTIAL report, so this defensive branch is exercised directly.
         val harness = WidgetHarness.build()
