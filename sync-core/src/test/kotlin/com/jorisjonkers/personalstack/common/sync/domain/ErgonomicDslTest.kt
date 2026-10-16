@@ -7,7 +7,11 @@ import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetId
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetKey
 import com.jorisjonkers.personalstack.common.sync.testsupport.WidgetScope
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Named
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import java.time.Instant
 
 /**
@@ -170,40 +174,13 @@ class ErgonomicDslTest {
 
     // --- SyncRegistration.inferred ---------------------------------------------------------------
 
-    @Test
-    fun `inferred registration covers every lifecycle branch`() {
-        val deletedAt = Instant.parse("2026-06-30T00:00:00Z")
-        assertThat(
-            SyncRegistration
-                .inferred(
-                    SyncRegistrationInference<WidgetId>(
-                        remoteId = null,
-                        lifecycle = SyncRegistrationLifecycle.LINKED,
-                    ),
-                ).lifecycle,
-        ).isEqualTo(SyncRegistrationLifecycle.LINKED)
-        assertThat(
-            SyncRegistration
-                .inferred(
-                    SyncRegistrationInference(
-                        remoteId = WidgetId("r"),
-                        remotelyDeletedAt = deletedAt,
-                    ),
-                ).lifecycle,
-        ).isEqualTo(SyncRegistrationLifecycle.REMOTELY_DELETED)
-        assertThat(SyncRegistration.inferred(remoteId = WidgetId("r")).lifecycle)
-            .isEqualTo(SyncRegistrationLifecycle.LINKED)
-        assertThat(
-            SyncRegistration
-                .inferred(
-                    SyncRegistrationInference(
-                        remoteId = null,
-                        rememberedRemoteId = WidgetId("r"),
-                    ),
-                ).lifecycle,
-        ).isEqualTo(SyncRegistrationLifecycle.UNLINKED)
-        assertThat(SyncRegistration.inferred<WidgetId>(remoteId = null).lifecycle)
-            .isEqualTo(SyncRegistrationLifecycle.NEVER_LINKED)
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("inferredLifecycles")
+    fun `an inferred registration takes the lifecycle its facts imply`(
+        registration: SyncRegistration<WidgetId>,
+        expected: SyncRegistrationLifecycle,
+    ) {
+        assertThat(registration.lifecycle).isEqualTo(expected)
     }
 
     @Test
@@ -298,5 +275,59 @@ class ErgonomicDslTest {
         assertThat(deleted.observedAt).isEqualTo(observedAt)
         assertThat(deleted.version).isEqualTo(VersionStamp.Number(3))
         assertThat(deleted.keys).containsExactly(WidgetKey.Remote(WidgetId("r1")))
+    }
+
+    companion object {
+        @JvmStatic
+        fun inferredLifecycles(): List<Arguments> =
+            listOf(
+                Arguments.of(
+                    Named.of(
+                        "an explicit lifecycle wins",
+                        SyncRegistration.inferred(
+                            SyncRegistrationInference<WidgetId>(
+                                remoteId = null,
+                                lifecycle = SyncRegistrationLifecycle.LINKED,
+                            ),
+                        ),
+                    ),
+                    SyncRegistrationLifecycle.LINKED,
+                ),
+                Arguments.of(
+                    Named.of(
+                        "a remote deletion time means remotely deleted",
+                        SyncRegistration.inferred(
+                            SyncRegistrationInference(
+                                remoteId = WidgetId("r"),
+                                remotelyDeletedAt = Instant.parse("2026-06-30T00:00:00Z"),
+                            ),
+                        ),
+                    ),
+                    SyncRegistrationLifecycle.REMOTELY_DELETED,
+                ),
+                Arguments.of(
+                    Named.of(
+                        "a remote id means linked",
+                        SyncRegistration.inferred(remoteId = WidgetId("r")),
+                    ),
+                    SyncRegistrationLifecycle.LINKED,
+                ),
+                Arguments.of(
+                    Named.of(
+                        "only a remembered remote id means unlinked",
+                        SyncRegistration.inferred(
+                            SyncRegistrationInference(remoteId = null, rememberedRemoteId = WidgetId("r")),
+                        ),
+                    ),
+                    SyncRegistrationLifecycle.UNLINKED,
+                ),
+                Arguments.of(
+                    Named.of(
+                        "no remote id at all means never linked",
+                        SyncRegistration.inferred<WidgetId>(remoteId = null),
+                    ),
+                    SyncRegistrationLifecycle.NEVER_LINKED,
+                ),
+            )
     }
 }

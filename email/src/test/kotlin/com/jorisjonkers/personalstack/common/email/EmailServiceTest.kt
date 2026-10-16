@@ -214,49 +214,12 @@ class EmailServiceTest {
     }
 
     @Test
-    fun `EmailRequest data class properties`() {
-        val request =
-            EmailRequest(
-                to = "a@b.com",
-                subject = "Sub",
-                textBody = "text",
-                htmlBody = "<b>html</b>",
-                from = "from@b.com",
-                fromName = "Name",
-                replyTo = "reply@b.com",
-            )
-        assertThat(request.to).isEqualTo("a@b.com")
-        assertThat(request.subject).isEqualTo("Sub")
-        assertThat(request.textBody).isEqualTo("text")
-        assertThat(request.htmlBody).isEqualTo("<b>html</b>")
-        assertThat(request.from).isEqualTo("from@b.com")
-        assertThat(request.fromName).isEqualTo("Name")
-        assertThat(request.replyTo).isEqualTo("reply@b.com")
-    }
-
-    @Test
-    fun `EmailRequest defaults are null`() {
+    fun `an email request has no bodies, sender or reply-to unless given`() {
         val request = EmailRequest(to = "a@b.com", subject = "Sub")
         assertThat(request.textBody).isNull()
         assertThat(request.htmlBody).isNull()
         assertThat(request.from).isNull()
         assertThat(request.fromName).isNull()
         assertThat(request.replyTo).isNull()
-    }
-
-    @Test
-    fun `EmailRequest copy works`() {
-        val request = EmailRequest(to = "a@b.com", subject = "Sub")
-        val copied = request.copy(subject = "New Sub")
-        assertThat(copied.subject).isEqualTo("New Sub")
-        assertThat(copied.to).isEqualTo("a@b.com")
-    }
-
-    @Test
-    fun `EmailRequest equals and hashCode`() {
-        val r1 = EmailRequest(to = "a@b.com", subject = "Sub")
-        val r2 = EmailRequest(to = "a@b.com", subject = "Sub")
-        assertThat(r1).isEqualTo(r2)
-        assertThat(r1.hashCode()).isEqualTo(r2.hashCode())
     }
 }

@@ -27,14 +27,6 @@ enum class MatchConfidence {
     NATURAL_KEY,
 }
 
-/** A local/remote pairing produced by a pass, retaining the pass and the joining key for audit. */
-data class MatchCandidate<A : Any, R : Any, RID : Any, KEY : Any>(
-    val pass: MatchPass<A, R, RID, KEY>,
-    val local: LocalRecord<A, RID, KEY>,
-    val remote: RemoteRecord<R, RID, KEY>,
-    val key: KEY,
-)
-
 /**
  * A structural data problem that prevents a safe automatic decision. Carries the offending
  * sides for diagnosis and is surfaced as a non-executable [SyncDecision.Conflict].

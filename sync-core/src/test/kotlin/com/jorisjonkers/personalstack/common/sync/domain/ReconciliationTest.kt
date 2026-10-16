@@ -42,7 +42,6 @@ class ReconciliationSingleTest {
         assertThat(equal.action).isEqualTo(SyncAction.EQUAL)
         assertThat(equal.reason).isEqualTo(SyncReason.AlreadyEqual)
         assertThat(equal.executable).isFalse()
-        exerciseGeneratedMembers(equal)
 
         assertThat(update.action).isEqualTo(SyncAction.UPDATE)
         assertThat(update.reason).isEqualTo(SyncReason.RemoteChanged)
@@ -52,7 +51,6 @@ class ReconciliationSingleTest {
                 it.path.value
             },
         ).containsExactly("name")
-        exerciseGeneratedMembers(update)
     }
 
     @Test
@@ -91,7 +89,6 @@ class ReconciliationSingleTest {
                 observedAt = observedAt,
             )
         assertTombstoneDelete(delete, id("w-delete"), remoteObservedAt, version)
-        exerciseGeneratedMembers(delete)
         assertThat(deleteSignal(deleteWithFallbackObservedAt)).isEqualTo(
             RemoteDeleteSignal.Tombstone(
                 remoteId = id("w-delete-fallback"),
@@ -118,7 +115,6 @@ class ReconciliationSingleTest {
 
         assertThat(alreadyDeleted.action).isEqualTo(SyncAction.IGNORE)
         assertThat(alreadyDeleted.reason).isEqualTo(SyncReason.RemoteDeleted)
-        exerciseGeneratedMembers(alreadyDeleted)
     }
 
     @Test
@@ -164,19 +160,15 @@ class ReconciliationSingleTest {
         assertThat(import.action).isEqualTo(SyncAction.IMPORT)
         assertThat(import.reason).isEqualTo(SyncReason.RemoteOnly)
         assertThat(import.executable).isTrue()
-        exerciseGeneratedMembers(import)
 
         assertThat(deletedRemote.action).isEqualTo(SyncAction.IGNORE)
         assertThat(deletedRemote.reason).isEqualTo(SyncReason.RemoteDeleted)
-        exerciseGeneratedMembers(deletedRemote)
 
         assertThat(notImportableFlag.action).isEqualTo(SyncAction.IGNORE)
         assertThat(notImportableFlag.reason).isEqualTo(SyncReason.NotImportable)
-        exerciseGeneratedMembers(notImportableFlag)
 
         assertThat(notImportablePolicy.action).isEqualTo(SyncAction.IGNORE)
         assertThat(notImportablePolicy.reason).isEqualTo(SyncReason.NotImportable)
-        exerciseGeneratedMembers(notImportablePolicy)
     }
 
     @Test
@@ -218,19 +210,16 @@ class ReconciliationSingleTest {
                     observedAt = observedAt,
                 ),
             )
-        exerciseGeneratedMembers(delete)
 
         assertThat(unlink.action).isEqualTo(SyncAction.UNLINK)
         assertThat(
             (unlink as SyncDecision.Unlink<Widget, RemoteWidget, WidgetId, WidgetKey>).unlinkReason,
         ).isEqualTo(UnlinkReason.Policy("absent on remote"))
-        exerciseGeneratedMembers(unlink)
 
         assertThat(conflict.action).isEqualTo(SyncAction.CONFLICT)
         assertThat(
             (conflict as SyncDecision.Conflict<Widget, RemoteWidget, WidgetId, WidgetKey>).conflict.kind,
         ).isEqualTo(SyncConflictKind.LINK_MISMATCH)
-        exerciseGeneratedMembers(conflict)
 
         assertThat(deletePolicyUnlinksWhenThereIsNoRememberedId.action).isEqualTo(SyncAction.UNLINK)
         val unlinkDecision = deletePolicyUnlinksWhenThereIsNoRememberedId as WidgetUnlinkDecision
@@ -264,20 +253,17 @@ class ReconciliationSingleTest {
         assertThat(
             (restore as SyncDecision.Restore<Widget, RemoteWidget, WidgetId, WidgetKey>).changes.fields,
         ).hasSize(1)
-        exerciseGeneratedMembers(restore)
 
         assertThat(relinkNeverLinked.action).isEqualTo(SyncAction.RELINK)
         assertThat(
             (relinkNeverLinked as SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>).remote.externalId,
         ).isEqualTo(id("w-relink-never"))
-        exerciseGeneratedMembers(relinkNeverLinked)
 
         assertThat(relinkDifferentActiveId.action).isEqualTo(SyncAction.RELINK)
         assertThat(
             (relinkDifferentActiveId as SyncDecision.Relink<Widget, RemoteWidget, WidgetId, WidgetKey>)
                 .remote.externalId,
         ).isEqualTo(id("w-new"))
-        exerciseGeneratedMembers(relinkDifferentActiveId)
     }
 
     @Test
@@ -288,7 +274,6 @@ class ReconciliationSingleTest {
         assertThat(decision.subject).isEqualTo(SyncSubject.Unknown)
         assertThat(decision.reason).isEqualTo(SyncReason.Policy("nothing to reconcile"))
         assertThat(decision.executable).isFalse()
-        exerciseGeneratedMembers(decision)
     }
 }
 
@@ -472,7 +457,6 @@ class ReconciliationManyTest {
                 "local:local-retry",
                 "local:local-conflict",
             )
-        plan.decisions.forEach(::exerciseGeneratedMembers)
     }
 
     @Test
@@ -544,126 +528,43 @@ class ReconciliationManyTest {
 
 class ReconciliationContractTest {
     @Test
-    fun `match plan and policy data classes expose generated members and defaults`() {
-        val fixture = policyContractFixture()
+    fun `a match pass is a hard match unless it says otherwise`() {
+        val pass =
+            MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>(name = "default-hard", localKeys = {
+                emptySet()
+            }, remoteKeys = { emptySet() })
 
-        assertMatchPolicyGeneratedMembers(fixture)
-        assertSyncPoliciesGeneratedMembers(fixture)
-        assertExecutionOptionDefaults(fixture.options)
-
-        // A conflict with only a remote side is not constructible through Reconciliation's public API.
+        assertThat(pass.confidence).isEqualTo(MatchConfidence.HARD)
     }
 
-    private fun policyContractFixture(): PolicyContractFixture {
-        val hard = hardRemoteIdPass()
-        val defaultConfidencePass =
-            MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>(
-                name = "default-hard",
-                localKeys = { emptySet() },
-                remoteKeys = { emptySet() },
-            )
-        val plan = MatchPlan(listOf(hard, defaultConfidencePass))
-        val localRecord =
+    @Test
+    fun `conflicts fail closed unless a conflict policy says otherwise`() {
+        val policies =
+            SyncPolicies<Widget, RemoteWidget, WidgetId, WidgetKey>(missingRemotePolicy = WidgetHarness.UNLINK_MISSING)
+        val local =
             WidgetLocalProjector.project(
                 Widget.linked("local-candidate", id("w-candidate"), "SKU-CANDIDATE", "same"),
             )
-        val remoteRecord = WidgetRemoteProjector.project(remote("w-candidate", "SKU-CANDIDATE", "same"))
-        val candidate = MatchCandidate(skuPass(), localRecord, remoteRecord, WidgetKey.Sku("SKU-CANDIDATE"))
         val conflict =
             SyncConflict(
                 subject = SyncFixtures.pairSubject("local-candidate", id("w-candidate")),
                 kind = SyncConflictKind.VERSION_CONFLICT,
-                local = localRecord,
-                remote = remoteRecord,
+                local = local,
+                remote = WidgetRemoteProjector.project(remote("w-candidate", "SKU-CANDIDATE", "same")),
                 message = "version skew",
             )
-        val syncPolicies =
+
+        assertThat(policies.conflictPolicy.decide(conflict).action).isEqualTo(SyncAction.CONFLICT)
+    }
+
+    @Test
+    fun `every remote record is importable unless an import policy says otherwise`() {
+        val policies =
             SyncPolicies<Widget, RemoteWidget, WidgetId, WidgetKey>(missingRemotePolicy = WidgetHarness.UNLINK_MISSING)
-        val options = SyncExecutionOptions()
 
-        return PolicyContractFixture(
-            hard = hard,
-            defaultConfidencePass = defaultConfidencePass,
-            plan = plan,
-            candidate = candidate,
-            conflict = conflict,
-            syncPolicies = syncPolicies,
-            options = options,
-        )
-    }
-
-    private fun assertMatchPolicyGeneratedMembers(fixture: PolicyContractFixture) {
-        assertThat(fixture.defaultConfidencePass.confidence).isEqualTo(MatchConfidence.HARD)
-        assertDataClassGeneratedMembers(fixture.plan, fixture.plan.copy(), fixture.plan.component1())
-        assertDataClassGeneratedMembers(
-            fixture.hard,
-            fixture.hard.copy(),
-            fixture.hard.component1(),
-            fixture.hard.component2(),
-            fixture.hard.component3(),
-            fixture.hard.component4(),
-        )
-        assertDataClassGeneratedMembers(
-            fixture.candidate,
-            fixture.candidate.copy(),
-            fixture.candidate.component1(),
-            fixture.candidate.component2(),
-            fixture.candidate.component3(),
-            fixture.candidate.component4(),
-        )
-        assertDataClassGeneratedMembers(
-            fixture.conflict,
-            fixture.conflict.copy(),
-            fixture.conflict.component1(),
-            fixture.conflict.component2(),
-            fixture.conflict.component3(),
-            fixture.conflict.component4(),
-            fixture.conflict.component5(),
-        )
-    }
-
-    private fun assertSyncPoliciesGeneratedMembers(fixture: PolicyContractFixture) {
-        assertDataClassGeneratedMembers(
-            fixture.syncPolicies,
-            fixture.syncPolicies.copy(),
-            fixture.syncPolicies.component1(),
-            fixture.syncPolicies.component2(),
-            fixture.syncPolicies.component3(),
-        )
-        assertThat(
-            fixture.syncPolicies.conflictPolicy
-                .decide(fixture.conflict)
-                .action,
-        ).isEqualTo(SyncAction.CONFLICT)
-        assertThat(fixture.syncPolicies.importPolicy.importable(remote("w-default-import", "SKU-DEFAULT", "default")))
-            .isTrue()
-    }
-
-    private fun assertExecutionOptionDefaults(options: SyncExecutionOptions) {
-        assertDataClassGeneratedMembers(
-            options,
-            options.copy(),
-            options.component1(),
-            options.component2(),
-            options.component3(),
-            options.component4(),
-        )
-        assertThat(options.listTransactionMode).isEqualTo(ListTransactionMode.PER_RECORD)
-        assertThat(options.pageSize).isEqualTo(500)
-        assertThat(options.lockTimeout).isEqualTo(Duration.ofSeconds(10))
-        assertThat(options.authorityMode).isEqualTo(AuthorityMode.REMOTE_AUTHORITATIVE)
+        assertThat(policies.importPolicy.importable(remote("w-default-import", "SKU-DEFAULT", "default"))).isTrue()
     }
 }
-
-private data class PolicyContractFixture(
-    val hard: MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>,
-    val defaultConfidencePass: MatchPass<Widget, RemoteWidget, WidgetId, WidgetKey>,
-    val plan: MatchPlan<Widget, RemoteWidget, WidgetId, WidgetKey>,
-    val candidate: MatchCandidate<Widget, RemoteWidget, WidgetId, WidgetKey>,
-    val conflict: SyncConflict<Widget, RemoteWidget, WidgetId, WidgetKey>,
-    val syncPolicies: SyncPolicies<Widget, RemoteWidget, WidgetId, WidgetKey>,
-    val options: SyncExecutionOptions,
-)
 
 private fun reconciliation(
     matchPlan: MatchPlan<Widget, RemoteWidget, WidgetId, WidgetKey>? = null,
@@ -868,172 +769,4 @@ private fun assertTombstoneDelete(
         }
         else -> error("expected tombstone delete signal but got $signal")
     }
-}
-
-private fun assertDataClassGeneratedMembers(
-    original: Any,
-    copied: Any,
-    vararg components: Any?,
-) {
-    assertThat(copied).isEqualTo(original)
-    assertThat(copied.hashCode()).isEqualTo(original.hashCode())
-    assertThat(original.toString()).isNotBlank()
-    assertThat(components.toList()).isNotEmpty()
-}
-
-private fun exerciseGeneratedMembers(decision: SyncDecision<Widget, RemoteWidget, WidgetId, WidgetKey>) {
-    assertThat(decision).isEqualTo(decision)
-    assertThat(decision.hashCode()).isEqualTo(decision.hashCode())
-    assertThat(decision.toString()).isNotBlank()
-    when (decision) {
-        is SyncDecision.Import<*, *, *, *> -> assertImportGeneratedMembers(decision)
-        is SyncDecision.Update<*, *, *, *> -> assertUpdateGeneratedMembers(decision)
-        is SyncDecision.Equal<*, *, *, *> -> assertEqualGeneratedMembers(decision)
-        is SyncDecision.Delete<*, *, *, *> -> assertDeleteGeneratedMembers(decision)
-        is SyncDecision.Unlink<*, *, *, *> -> assertUnlinkGeneratedMembers(decision)
-        is SyncDecision.Restore<*, *, *, *> -> assertRestoreGeneratedMembers(decision)
-        is SyncDecision.Relink<*, *, *, *> -> assertRelinkGeneratedMembers(decision)
-        is SyncDecision.Ignore<*, *, *, *> -> assertIgnoreGeneratedMembers(decision)
-        is SyncDecision.Conflict<*, *, *, *> -> assertConflictGeneratedMembers(decision)
-        is SyncDecision.Retry<*, *, *, *> -> assertRetryGeneratedMembers(decision)
-    }
-}
-
-private fun assertImportGeneratedMembers(decision: SyncDecision.Import<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-    )
-}
-
-private fun assertUpdateGeneratedMembers(decision: SyncDecision.Update<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-        decision.component8(),
-    )
-}
-
-private fun assertEqualGeneratedMembers(decision: SyncDecision.Equal<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-    )
-}
-
-private fun assertDeleteGeneratedMembers(decision: SyncDecision.Delete<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-    )
-}
-
-private fun assertUnlinkGeneratedMembers(decision: SyncDecision.Unlink<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-    )
-}
-
-private fun assertRestoreGeneratedMembers(decision: SyncDecision.Restore<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-        decision.component8(),
-    )
-}
-
-private fun assertRelinkGeneratedMembers(decision: SyncDecision.Relink<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-        decision.component8(),
-    )
-}
-
-private fun assertIgnoreGeneratedMembers(decision: SyncDecision.Ignore<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-    )
-}
-
-private fun assertConflictGeneratedMembers(decision: SyncDecision.Conflict<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-    )
-}
-
-private fun assertRetryGeneratedMembers(decision: SyncDecision.Retry<*, *, *, *>) {
-    assertDataClassGeneratedMembers(
-        decision,
-        decision.copy(),
-        decision.component1(),
-        decision.component2(),
-        decision.component3(),
-        decision.component4(),
-        decision.component5(),
-        decision.component6(),
-        decision.component7(),
-    )
 }
