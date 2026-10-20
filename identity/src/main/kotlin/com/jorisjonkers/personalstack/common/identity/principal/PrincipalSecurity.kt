@@ -135,7 +135,7 @@ class PrincipalAccessDeniedHandler : AccessDeniedHandler {
             response.sendError(HttpStatus.FORBIDDEN.value())
             return
         }
-        val back = request.requestURI + (request.queryString?.let { "?$it" } ?: "")
+        val back = request.requestURI + request.queryString?.let { "?$it" }.orEmpty()
         val target = "$STEP_UP_PATH?minutes=${stepUp.minutes}&rd=" + URLEncoder.encode(back, StandardCharsets.UTF_8)
         response.status = HttpStatus.SEE_OTHER.value()
         response.setHeader("Location", target)

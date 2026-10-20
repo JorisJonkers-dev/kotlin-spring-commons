@@ -40,7 +40,7 @@ internal fun answered(
 
 internal fun principalOf(claims: Map<String, Any?>): Principal =
     Principal(
-        subject = claims["sub"] as? String ?: "",
+        subject = (claims["sub"] as? String).orEmpty(),
         kind = Kind.entries.firstOrNull { it.value == claims["kind"] } ?: refuse("unknown-major"),
         email = claims["email"] as? String,
         name = claims["name"] as? String,
