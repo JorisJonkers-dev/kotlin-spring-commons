@@ -21,7 +21,7 @@ import org.springframework.dao.DataIntegrityViolationException
  * The parser does not depend on the JDBC driver class directly — it
  * uses reflection to read `getServerErrorMessage` so this module can
  * still be loaded by services that don't pull `postgresql` on the
- * runtime classpath (only assistant-api / auth-api / knowledge-api do).
+ * runtime classpath (only assistant-api / auth-api do).
  */
 internal object PostgresConstraintParser {
     private val DETAIL_FK_REGEX =
