@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.10.0...v0.11.0) (2026-10-20)
+
+
+### Features
+
+* **identity:** the Principal adapter, as a Spring Security filter and authentication type ([#56](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/56)) ([69c2aaf](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/69c2aaf6f03776cf9a791744967d9d0deea0dc73))
+
 ## [0.10.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.9.3...v0.10.0) (2026-10-16)
 
 
