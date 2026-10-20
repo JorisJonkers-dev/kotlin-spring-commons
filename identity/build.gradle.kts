@@ -17,10 +17,13 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.mockk)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.jackson.module.kotlin)
     testImplementation(libs.spring.boot.starter.web)
     testImplementation(libs.spring.boot.autoconfigure)
     testImplementation(libs.spring.boot.test)
     testImplementation(libs.spring.security.web)
+    testImplementation(libs.spring.security.config)
+    testImplementation(libs.spring.aop)
     testImplementation(libs.spring.test)
     testRuntimeOnly(libs.junit.platform.launcher)
 }

@@ -39,6 +39,38 @@ The current source keeps the existing
 | `vault` | `dev.jorisjonkers:kotlin-commons-vault` |
 | `web` | `dev.jorisjonkers:kotlin-commons-web` |
 
+## Identity Principal
+
+`identity`'s `principal` package reads who is calling from identity's Principal contract: the
+Gate's signed `X-Identity-Principal`, a JWT access token, or an opaque token it introspects (each
+answer kept at most 30 seconds). The contract it is held to is vendored under
+`identity/src/test/resources/principal-contract`; `scripts/pin-principal-contract.sh <tag>` moves
+the pin, and the `Principal` type is regenerated with
+`PRINCIPAL_UPDATE=true ./gradlew :identity:test --tests '*PrincipalTypeTest*'`.
+
+An app names identity and its Client, then places the filter and the policies in its chain:
+
+```yaml
+jorisjonkers.identity.principal:
+  issuer: https://auth.jorisjonkers.dev
+  client-id: wiki
+  client-secret: ${WIKI_CLIENT_SECRET} # only to accept opaque tokens
+```
+
+```kotlin
+http
+    .addFilterBefore(principalFilter, AuthorizationFilter::class.java)
+    .exceptionHandling { it.accessDeniedHandler(principalAccessDeniedHandler) }
+    .authorizeHttpRequests {
+        it.requestMatchers(HttpMethod.DELETE, "/pages/**").access(PrincipalPolicies.refuseTools())
+        it.requestMatchers("/pay/**").access(PrincipalPolicies.requireRecentTwoFactor(5))
+        it.anyRequest().authenticated()
+    }
+```
+
+Its authorities are the App Roles as plain strings, so `@PreAuthorize("hasAuthority('editor')")`
+checks the roles deploy-kit generates.
+
 ## System Test Harness
 
 `system-test-harness` contains reusable helpers for external system tests:

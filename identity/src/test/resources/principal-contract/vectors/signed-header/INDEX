@@ -1,0 +1,15 @@
+bad-signature
+expired
+machine
+minor-version
+missing
+personal-token
+session-two-factor
+session
+spoofed-plain-headers
+tool
+unknown-key
+unknown-major
+wrong-audience
+wrong-issuer
+wrong-typ
