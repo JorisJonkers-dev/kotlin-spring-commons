@@ -14,7 +14,7 @@ jobs:
     runs-on: 'ubuntu-latest'
     steps:
       - uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1
-      - uses: 'JorisJonkers-dev/github-workflows/actions/setup-java-gradle@f8f0a5ae583913de18143bbbbe0db9ecab970435' # v0.45.0
+      - uses: 'JorisJonkers-dev/github-workflows/actions/setup-java-gradle@183d218b87bcbbc2a21dddd51340828fb8cbc027' # v0.45.0
         with:
           java-version: '21.0.12+8.0.LTS'
           packages-proxy-token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
