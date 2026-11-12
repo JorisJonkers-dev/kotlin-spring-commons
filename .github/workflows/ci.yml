@@ -44,7 +44,7 @@ jobs:
 
   jvm-ci:
     name: 'JVM CI'
-    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/jvm-ci.yml@38aa4e9ea4a2adfdcfc210967f540023e05bca07' # v0.48.0
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/jvm-ci.yml@8aaf024208bf4b29acb468aecd3cd7ee130d5ac1' # v0.49.1
     with:
       require-package-proxy: true
       java-version: '21'
