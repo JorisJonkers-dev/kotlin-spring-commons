@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.11.0...v0.11.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **hygiene:** never cancel a run of the required hygiene checks ([#72](https://github.com/JorisJonkers-dev/kotlin-spring-commons/issues/72)) ([16ff4bb](https://github.com/JorisJonkers-dev/kotlin-spring-commons/commit/16ff4bb285d9631feef8a54ef153d698fcad50e1))
+
 ## [0.11.0](https://github.com/JorisJonkers-dev/kotlin-spring-commons/compare/v0.10.0...v0.11.0) (2026-10-20)
 
 
